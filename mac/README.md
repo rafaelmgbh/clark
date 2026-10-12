@@ -184,7 +184,7 @@ abre.
 | Estado | Significado |
 |--------|-------------|
 | `WORKING` | O agente está escrevendo. |
-| `DONE!` | Terminou um trabalho e espera você. O Dock mostra a contagem; com o CLARK em segundo plano, vem também uma notificação. |
+| `DONE!` | Terminou um trabalho e espera você. O Dock mostra a contagem; com o CLARK em segundo plano, vem também uma notificação com o nome do agente e, embaixo, a empresa e o projeto dele (`Acme › Api`). |
 | `IDLE` | Parado. |
 | `SHELL` | Parado, com um comando que o Claude deixou rodando em segundo plano: o `1 shell` do rodapé do Claude Code. Na barra superior conta em `WORKING`. |
 | `GAME OVER` | O processo saiu. Enter abre de novo na mesma conversa. |

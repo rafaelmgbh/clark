@@ -57,6 +57,15 @@ public enum ProjectNaming {
         return canonicalPath
     }
 
+    /// Onde um agente trabalha, numa linha: `Empresa › Projeto`. O projeto com o nome da empresa não
+    /// se repete, e o `GLOBAL` não entra: fora de toda empresa fica só o projeto, e na home, nada.
+    public static func place(project: String, company: String, isGlobal: Bool) -> String {
+        guard !isGlobal else { return "" }
+        let company = company == global ? "" : company
+        if project.isEmpty || project.uppercased() == company.uppercased() { return company }
+        return company.isEmpty ? project : company + ProjectCatalog.trailSeparator + project
+    }
+
     /// Nome do projeto de uma pasta: `GLOBAL` na home; senão o apelido da pasta de `namedPath`
     /// ou o nome dela arrumado.
     public static func name(canonicalPath: String, canonicalHome: String, nicknames: [String: String],

@@ -6,7 +6,8 @@ protocol Notifying: AnyObject {
     /// Chamado com o `session_id` do agente quando o usuário clica na notificação.
     var onOpen: ((String) -> Void)? { get set }
     /// Notificação do macOS e pedido de atenção no Dock.
-    func agentDone(name: String, sessionID: String)
+    /// - Parameter place: onde o agente trabalha (`Empresa › Projeto`). Vazio no `GLOBAL`.
+    func agentDone(name: String, place: String, sessionID: String)
     /// Selo do Dock com a contagem de agentes em DONE.
     func setBadge(_ count: Int)
 }
@@ -23,16 +24,24 @@ final class Notifier: NSObject, Notifying, UNUserNotificationCenterDelegate {
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
-    func agentDone(name: String, sessionID: String) {
+    func agentDone(name: String, place: String, sessionID: String) {
         NSApp.requestUserAttention(.informationalRequest)
         guard let center else { return }
+        // O mesmo identificador por agente: um aviso novo substitui o anterior.
+        center.add(UNNotificationRequest(identifier: sessionID,
+                                         content: Self.content(name: name, place: place, sessionID: sessionID),
+                                         trigger: nil))
+    }
+
+    /// O aviso de agente pronto.
+    static func content(name: String, place: String, sessionID: String) -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
         content.title = "CLARK · \(name)"
+        content.subtitle = place
         content.body = "Terminou e está te esperando."
         content.sound = .default
         content.userInfo = ["session_id": sessionID]
-        // O mesmo identificador por agente: um aviso novo substitui o anterior.
-        center.add(UNNotificationRequest(identifier: sessionID, content: content, trigger: nil))
+        return content
     }
 
     func setBadge(_ count: Int) {

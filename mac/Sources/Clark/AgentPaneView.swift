@@ -138,6 +138,8 @@ final class AgentPaneView: PixelView {
     private var digestGeneration = 0
 
     var color: RGB { CompanyResolver.tone(company.color, index: tone) }
+    /// Onde o agente trabalha, para o aviso de pronto: `Empresa › Projeto`. Vazio no `GLOBAL`.
+    var place: String { ProjectNaming.place(project: project, company: company.name, isGlobal: isGlobal) }
     var state: AgentState { machine.state }
     /// Resumo da última sessão, enquanto está na tela.
     var digest: SessionDigest? { digestView.digest }

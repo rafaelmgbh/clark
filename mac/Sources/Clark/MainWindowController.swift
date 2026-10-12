@@ -653,7 +653,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     func paneNeedsAttention(_ pane: AgentPaneView) {
-        if !isAppActive() { notifier.agentDone(name: pane.name, sessionID: pane.sessionID) }
+        if !isAppActive() { notifier.agentDone(name: pane.name, place: pane.place, sessionID: pane.sessionID) }
     }
 
     func paneDidChange(_ pane: AgentPaneView) {

@@ -803,6 +803,22 @@ final class MainWindowControllerTests: XCTestCase {
         XCTAssertEqual(fixture.notifier.done, ["AGENT 1"])
     }
 
+    func testNotificationSaysWhereTheAgentWorks() {
+        let api = fixture.temp.makeDirectory("Projetos/acme/api")
+        fixture.temp.write(".config/clark/companies.json", """
+        {"companies": [{"name": "ACME", "paths": ["~/Projetos/acme"]}]}
+        """)
+        let controller = fixture.started()
+        controller.isAppActive = { false }
+        controller.addAgents(1, in: api)
+        controller.addAgents(1)
+
+        controller.panes[0].terminal.onBell?()
+        controller.panes[1].terminal.onBell?()
+        XCTAssertEqual(fixture.notifier.done, ["AGENT 1", "AGENT 2"])
+        XCTAssertEqual(fixture.notifier.places, ["ACME › Api", ""], "o agente do GLOBAL não tem projeto para mostrar")
+    }
+
     // MARK: comando em segundo plano
 
     /// Grava o arquivo em que o Claude Code diz o que a sessão do agente está fazendo.

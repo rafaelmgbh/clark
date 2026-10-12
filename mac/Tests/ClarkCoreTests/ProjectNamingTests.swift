@@ -95,6 +95,25 @@ final class ProjectNamingTests: XCTestCase {
         XCTAssertEqual(named("/"), "/")
     }
 
+    func testPlaceJoinsTheCompanyAndTheProject() {
+        XCTAssertEqual(ProjectNaming.place(project: "Api", company: "ACME", isGlobal: false), "ACME › Api")
+    }
+
+    func testPlaceDoesNotRepeatTheProjectNamedAfterTheCompany() {
+        XCTAssertEqual(ProjectNaming.place(project: "Acme", company: "ACME", isGlobal: false), "ACME")
+        XCTAssertEqual(ProjectNaming.place(project: "", company: "ACME", isGlobal: false), "ACME")
+    }
+
+    func testPlaceOutsideEveryCompanyIsOnlyTheProject() {
+        XCTAssertEqual(ProjectNaming.place(project: "Rascunho", company: "GLOBAL", isGlobal: false), "Rascunho")
+    }
+
+    func testPlaceOfTheHomeIsEmpty() {
+        XCTAssertEqual(ProjectNaming.place(project: "GLOBAL", company: "GLOBAL", isGlobal: true), "")
+        XCTAssertEqual(ProjectNaming.place(project: "GLOBAL", company: "ACME", isGlobal: true), "",
+                       "a home dentro de uma empresa declarada continua sendo o GLOBAL")
+    }
+
     func testNicknamesAreCanonicalizedOnce() {
         let canonical = ProjectNaming.canonical(["~/atalho": "Loja", "/x/y": "Outro", "": "vazio"]) { path in
             path == "~/atalho" ? "/real/loja" : path

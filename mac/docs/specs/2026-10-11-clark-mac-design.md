@@ -132,7 +132,7 @@ O arquivo só vale se é um arquivo comum de até 64 KiB, nomeia o mesmo `pid` e
 
 A etiqueta é azul (`term[4]`, cor que nenhum estado usa), com as letras na cor do fundo. Ela não é estado: fica fora da máquina de estado e das contagens da barra superior. O controle remoto é relido uma vez por segundo em qualquer estado menos EXITED, inclusive em WORKING, quando o arquivo não serve para decidir o estado. Em EXITED a etiqueta some na hora e o arquivo não é mais lido, porque o processo morto à força deixa o arquivo para trás. No cabeçalho ela fica encostada na etiqueta de estado e escolhe o espaço antes do resumo do diff e do caminho, sem tirar espaço das etiquetas da empresa, do projeto e do nome: no aperto sai primeiro o resumo do diff, e sem espaço nem para ela o aviso fica só no card. No card ela fica na ponta direita da linha de detalhe, com o resumo do diff à esquerda.
 
-**Notificação.** Só com a janela inativa: notificação do macOS com `CLARK · <agente>`, selo no Dock com a contagem de DONE e pedido de atenção do app.
+**Notificação.** Só com a janela inativa: notificação do macOS com `CLARK · <agente>` e, na linha de baixo, onde o agente trabalha (`Empresa › Projeto`; só o projeto fora de toda empresa, só a empresa quando o projeto tem o nome dela, e nada no `GLOBAL`), selo no Dock com a contagem de DONE e pedido de atenção do app.
 
 **Fechar.** SIGHUP no processo. Ao sair do app com agentes vivos, um diálogo confirma; a lista de agentes é gravada e reaberta na próxima vez. `--fresh` ignora a lista. Agente salvo cuja pasta não existe mais abre na home, numa conversa nova, e a barra avisa: a conversa antiga pertence à pasta que sumiu.
 

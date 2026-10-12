@@ -278,8 +278,9 @@ com 17 passos. Nenhum deles foi registrado como rodado. Os que mais pesam, por o
   voltam os mesmos agentes, nomes, pastas e conversas. `clark --fresh` não restaura nenhum.
 
 - [ ] **C2. Notificação (passo 7).** Tarefa de uns dez segundos num agente, com outro app na
-  frente. Esperado: `WORKING`, depois `DONE!`, a notificação `CLARK · <agente>` e a contagem no
-  Dock. Clicar na notificação traz o CLARK com aquele agente em foco.
+  frente. Esperado: `WORKING`, depois `DONE!`, a notificação `CLARK · <agente>` com a empresa e o
+  projeto na linha de baixo (`Acme › Api`; nada no agente do `GLOBAL`) e a contagem no Dock. Clicar
+  na notificação traz o CLARK com aquele agente em foco.
 
 - [ ] **C3. Teclado ABNT (passo 4).** `ação, é, à, õ, ü, ç, 'aspas', "aspas"` no prompt do
   `claude` saem como digitados. Option+← e Option+→ pulam palavra.

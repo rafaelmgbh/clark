@@ -5,9 +5,14 @@ import Foundation
 final class SpyNotifier: Notifying {
     var onOpen: ((String) -> Void)?
     private(set) var done: [String] = []
+    /// Onde cada agente avisado trabalha, na ordem de `done`.
+    private(set) var places: [String] = []
     private(set) var badges: [Int] = []
 
-    func agentDone(name: String, sessionID: String) { done.append(name) }
+    func agentDone(name: String, place: String, sessionID: String) {
+        done.append(name)
+        places.append(place)
+    }
     func setBadge(_ count: Int) { badges.append(count) }
 }
 
