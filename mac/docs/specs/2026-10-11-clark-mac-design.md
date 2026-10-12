@@ -147,7 +147,7 @@ O arquivo só vale se é um arquivo comum de até 64 KiB, nomeia o mesmo `pid` e
 
 1. Base: saída de `$SHELL -l -i -c` imprimindo um marcador e `env -0`, lida uma vez na abertura, com limite de 5 s. O marcador descarta o que o shell interativo imprimir antes. Se falhar, a base é o ambiente do próprio app com um `PATH` padrão, e a barra superior mostra o aviso.
 2. Saem as nove variáveis de sessão do Claude pai listadas em `PARENT_SESSION_VARS` no original.
-3. Saem os nomes que casam, sem diferenciar maiúsculas, com `*KEY*`, `*TOKEN*`, `*SECRET*`, `*PASSWORD*`, `*PASSWD*`, `*CREDENTIAL*`, `AWS_*`, `PG*`, `*_DSN` e `DATABASE_URL`.
+3. Saem os nomes que casam, sem diferenciar maiúsculas, com `*KEY*`, `*TOKEN*`, `*SECRET*`, `*PASSWORD*`, `*PASSWD*`, `*CREDENTIAL*`, `AWS_*`, `PG*`, `*_DSN`, `DATABASE_URL`, `*_PASS`, `*_PWD` e `*_PAT`. Os três últimos, aprovados em 2026-10-12, só valem no fim do nome e com o `_`: `SMTP_PASS`, `MYSQL_PWD` e `GITHUB_PAT` saem; `PWD`, `OLDPWD`, `PATH` e `SSH_ASKPASS` ficam.
 4. Voltam os nomes em `env_allow` global e da empresa.
 5. Entram `TERM=xterm-256color`, `COLORTERM=truecolor`, `CLARK_AGENT` e `CLARK_COMPANY`.
 
@@ -301,7 +301,7 @@ Tudo em `~/.config/clark/`.
 
 `swift test` em `ClarkCoreTests`:
 
-- `EnvPolicy`: cada padrão de segredo remove; `env_allow` global e da empresa devolvem; variável liberada para uma empresa não aparece em outra; as variáveis de sessão do pai saem sempre.
+- `EnvPolicy`: cada padrão de segredo remove; as formas curtas de senha só contam como sufixo; `env_allow` global e da empresa devolvem; variável liberada para uma empresa não aparece em outra; as variáveis de sessão do pai saem sempre.
 - `CompanyResolver`: prefixo mais longo vence; detecção automática sob `roots`; `AVULSO`; cor estável para o mesmo nome; `path` que cobre uma root gera aviso.
 - `AgentStateMachine`: cada linha da tabela de estado, com relógio injetado, e o SHELL em cada ponto em que ela diz IDLE.
 - `SessionActivity`: os três valores de `status`; valor desconhecido, `pid` de outro processo, arquivo mais velho que o processo, pasta ou pipe no lugar do arquivo e arquivo grande demais não dão resposta.

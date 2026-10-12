@@ -22,9 +22,10 @@ public enum EnvPolicy {
     ]
 
     /// Nomes com cara de segredo, comparados sem diferenciar maiúsculas. `*` casa com qualquer trecho.
+    /// As formas curtas (`_PASS`, `_PWD`, `_PAT`) só valem no fim do nome e com o `_`: `PWD` e `PATH` ficam.
     public static let secretPatterns = [
         "*KEY*", "*TOKEN*", "*SECRET*", "*PASSWORD*", "*PASSWD*", "*CREDENTIAL*",
-        "AWS_*", "PG*", "*_DSN", "DATABASE_URL",
+        "AWS_*", "PG*", "*_DSN", "DATABASE_URL", "*_PASS", "*_PWD", "*_PAT",
     ]
 
     public static func isValidName(_ name: String) -> Bool {

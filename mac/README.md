@@ -217,7 +217,8 @@ Cada agente nasce com o ambiente do seu shell de login, menos:
 1. as variáveis de sessão do Claude Code que abriu o CLARK, para o agente não se achar uma
    subsessão;
 2. as variáveis com nome de segredo: `*KEY*`, `*TOKEN*`, `*SECRET*`, `*PASSWORD*`, `*PASSWD*`,
-   `*CREDENTIAL*`, `AWS_*`, `PG*`, `*_DSN` e `DATABASE_URL`.
+   `*CREDENTIAL*`, `AWS_*`, `PG*`, `*_DSN`, `DATABASE_URL`, `*_PASS`, `*_PWD` e `*_PAT`. Os três
+   últimos só valem no fim do nome: `SMTP_PASS` sai, `PWD` e `PATH` ficam.
 
 Uma variável da lista 2 só chega ao agente se estiver em `env_allow`: o do topo do arquivo vale
 para todos os agentes, o da empresa só para os agentes dela. Uma empresa detectada pela pasta,

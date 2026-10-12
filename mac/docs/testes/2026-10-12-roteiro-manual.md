@@ -365,4 +365,6 @@ E no que veio depois, também sem consulta:
   coluna pede 320 pontos de terminal; o menu do cabeçalho tem `Arquivos alterados`; arquivo da raiz
   fica numa linha mais baixa, sem a pasta; a coluna não é lembrada ao reabrir o app.
 
-Fora do teste, segue aberta a ampliação dos nomes de segredo com `*_PASS`, `*_PWD` e `*_PAT`.
+A ampliação dos nomes de segredo com `*_PASS`, `*_PWD` e `*_PAT` foi aprovada e entrou em
+2026-10-12. Se um agente parar de autenticar depois dela, o menu do agente mostra o nome removido,
+e o conserto é listar esse nome em `env_allow`.

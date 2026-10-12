@@ -33,7 +33,7 @@ final class EnvPolicyTests: XCTestCase {
     func testEverySecretPatternRemoves() {
         let secrets = ["OPENAI_API_KEY", "GITHUB_TOKEN", "APP_SECRET", "DB_PASSWORD", "MYSQL_PASSWD",
                        "GOOGLE_APPLICATION_CREDENTIALS", "AWS_PROFILE", "PGPASSFILE", "SENTRY_DSN", "DATABASE_URL",
-                       "npm_config_authtoken"]
+                       "SMTP_PASS", "MYSQL_PWD", "GITHUB_PAT", "npm_config_authtoken"]
         XCTAssertEqual(secrets.count, EnvPolicy.secretPatterns.count + 1)
         var base = ["PATH": "/usr/bin", "HOME": "/Users/eu", "LANG": "pt_BR.UTF-8", "EDITOR": "vim"]
         for name in secrets { base[name] = "valor-\(name)" }
@@ -41,6 +41,18 @@ final class EnvPolicyTests: XCTestCase {
         for name in secrets { XCTAssertNil(result.variables[name], name) }
         XCTAssertEqual(result.removed, secrets.sorted())
         for name in ["PATH", "HOME", "LANG", "EDITOR"] { XCTAssertEqual(result.variables[name], base[name]) }
+    }
+
+    /// As formas curtas de senha só contam no fim do nome e depois de um `_`: sem isso, a pasta atual
+    /// e o `PATH` sairiam do ambiente do agente.
+    func testShortPasswordNamesAreSecretsOnlyAsASuffix() {
+        for name in ["SMTP_PASS", "db_pass", "MYSQL_PWD", "redis_pwd", "GITHUB_PAT", "asana_pat"] {
+            XCTAssertTrue(EnvPolicy.isSecret(name), name)
+        }
+        for name in ["PWD", "OLDPWD", "PATH", "MANPATH", "XDG_DATA_PATH", "SSH_ASKPASS", "PASS_THROUGH", "COMPASS",
+                     "PAT", "PWD_OLD", "APP_PWD_DIR", "PROXY_PASS_THROUGH"] {
+            XCTAssertFalse(EnvPolicy.isSecret(name), name)
+        }
     }
 
     func testEachPatternIsExercised() {
