@@ -1,4 +1,4 @@
-# Roteiro manual: diff, projetos e o que ficou do M1
+# Roteiro manual: diff, projetos, última sessão e o que ficou do M1
 
 Escrito em 2026-10-12 para a próxima sessão de teste. Quem roda é o dono da máquina: o roteiro
 usa a tela, o teclado e a conta do `claude`. Nada aqui é automatizado.
@@ -9,6 +9,7 @@ usa a tela, o teclado e a conta do `claude`. Nada aqui é automatizado.
 |-------|------------|---------|
 | Diff do agente (`dcea13e`) | 324 testes verdes, 8 mutações mortas, imagens renderizadas nos testes | nunca |
 | Menu de projetos (`443277d`) | coberto pelos testes | nunca; nem o clique no botão `PROJETO` |
+| Início no `GLOBAL`, menu por empresa, projeto no cabeçalho, apelidos e última sessão (commit seguinte ao `ab24420`) | 391 testes verdes, 7 mutações mortas, imagens renderizadas nos testes | nunca |
 | Ícone do dragão (`7fa1ec6`) | coberto pelos testes | nunca |
 | Núcleo do M1 (`80cb7e8`) | coberto pelos testes | em uso, mas o roteiro da Task 15 do plano nunca foi rodado inteiro |
 | `Tests/packaging.sh` depois do diff | não rodou: exige o CLARK fechado | não se aplica |
@@ -18,8 +19,8 @@ a compilação com o diff: em 2026-10-11 o executável instalado era idêntico a
 
 ## Preparação
 
-1. Confirme a versão instalada: o menu `Agentes` tem os itens `Ver diff` e `Atualizar diff`. Se não
-   tiver, saia do CLARK (⌘Q) e rode, de dentro de `mac/`:
+1. Confirme a versão instalada: o menu `Agentes` tem os itens `Ver diff`, `Atualizar diff` e
+   `Apelidar projeto…`. Se faltar algum, saia do CLARK (⌘Q) e rode, de dentro de `mac/`:
 
    ```bash
    ./build.sh && ./install.sh
@@ -133,22 +134,60 @@ a compilação com o diff: em 2026-10-11 o executável instalado era idêntico a
   `git status`; a janela abre sem demora perceptível; `git status` no Terminal não mostra nada que
   o CLARK tenha criado ou preparado.
 
-## B. Projetos e ícone
+## B. Projetos, apelidos, última sessão e ícone
 
-- [ ] **B1. Clique no botão `PROJETO`.** Clique no botão da barra, sem usar o ⌘D. Esperado: o menu
-  abre logo abaixo dele, com `GLOBAL`, as empresas e `Outra pasta…`.
+- [ ] **B1. Começa no `GLOBAL`.** Feche todos os agentes, saia (⌘Q) e abra o CLARK. Esperado: um
+  agente na home, com `GLOBAL` ao lado do nome, sem empresa. `! pwd` mostra a home.
 
-- [ ] **B2. Abrir num projeto.** Escolha um projeto de uma empresa. Esperado: abre um agente novo
-  naquela pasta, com o nome e a cor da empresa no cabeçalho. Rode `! pwd` no agente para conferir.
+- [ ] **B2. Clique no botão `PROJETO`.** Clique no botão da barra, sem usar o ⌘D. Esperado: o menu
+  abre logo abaixo dele, sem demora, com `GLOBAL`, as empresas e `Outra pasta…`. O título do botão
+  é sempre `PROJETO`.
 
-- [ ] **B3. `GLOBAL`.** Esperado: o agente abre na home, com a empresa `AVULSO`.
+- [ ] **B3. Submenu da empresa.** Abra uma empresa com vários projetos. Esperado, de cima para
+  baixo: os projetos do primeiro nível; os mais fundos sob um título com as pastas do caminho
+  (`Sistemas › Vendas`); `Outras pastas`; `Pasta da empresa`. Nada de `node_modules` nem de pasta
+  oculta. Passar o mouse num item mostra o caminho.
 
-- [ ] **B4. Pasta que guarda repositórios.** Uma pasta que não é repositório git e tem repositórios
-  dentro aparece como submenu.
+- [ ] **B4. Abrir num projeto.** Escolha um projeto. Esperado: abre um agente novo naquela pasta, com
+  o projeto grande na cor da empresa e a empresa em cinza: `AGENT 2  MEU PROJETO  EMPRESA`. O card da
+  lista lateral traz o projeto numa linha própria. Rode `! pwd` para conferir a pasta.
 
-- [ ] **B5. ⌘N repete.** Depois de escolher um projeto, ⌘N abre outro agente na mesma pasta.
+- [ ] **B5. O `claude` enxerga o projeto.** No agente aberto no B4, rode `/memory`. Esperado: o
+  `CLAUDE.md` (ou `AGENTS.md`) listado é o daquele projeto.
 
-- [ ] **B6. Ícone.** O dragão aparece no Dock, no ⌘Tab e no Finder (`~/Applications`), nítido nos
+- [ ] **B6. ⌘N e ⌘⇧N.** Com o agente do B4 em foco, ⌘N abre um agente no `GLOBAL`, e ⌘⇧N abre outro
+  na pasta do agente em foco. O botão direito no cabeçalho tem o mesmo `Novo agente nesta pasta`.
+
+- [ ] **B7. Apelidar.** Botão direito no cabeçalho do agente do B4, `Apelidar projeto…`, digite um
+  nome e Enter. Esperado: o cabeçalho e o card de todos os agentes daquele projeto trocam na hora; no
+  menu `PROJETO`, o apelido aparece no topo do submenu da empresa. Abra um agente numa subpasta do
+  mesmo repositório (`Outra pasta…`): ele mostra o mesmo apelido.
+
+- [ ] **B8. O apelido fica.** ⌘Q e abra de novo. Esperado: o apelido continua no cabeçalho e no menu.
+  Apelidar de novo com o campo vazio volta ao nome da pasta. No agente do `GLOBAL`, o item
+  `Apelidar projeto…` fica apagado.
+
+- [ ] **B9. Última sessão.** Escolha no menu um projeto em que você já conversou com o `claude`.
+  Esperado: entre o cabeçalho e o terminal aparece a faixa `ULTIMA SESSAO` com a data (`HOJE`,
+  `ONTEM` ou o dia), o título, o último pedido e o começo da última resposta; se a resposta falava do
+  que ficou por fazer, essa linha vem em amarelo. O texto bate com a conversa de verdade.
+
+- [ ] **B10. A faixa sai do caminho.** No agente do B9, digite qualquer tecla. Esperado: a faixa
+  some e o terminal ocupa o espaço. Abra outro agente no mesmo projeto e clique na faixa: some também.
+
+- [ ] **B11. Quando a faixa não aparece.** No `GLOBAL`; numa pasta em que o `claude` nunca rodou; e
+  num agente restaurado ao reabrir o CLARK. Com dois agentes no mesmo projeto, a faixa do segundo não
+  mostra a conversa que o primeiro está tendo agora.
+
+- [ ] **B12. Painel estreito.** Passe para a grade (⌘L) com seis ou mais agentes de projetos de nome
+  comprido. Esperado: o projeto e depois o nome passam para a letra pequena; `AGENT 1` e `AGENT 2`
+  continuam distinguíveis e a etiqueta de estado não some.
+
+- [ ] **B13. Linha de comando.** Com o CLARK fechado: `clark ~/alguma/pasta` restaura os agentes e
+  abre mais um naquela pasta; um ⌘N depois disso abre no `GLOBAL`. `clark /nao/existe` abre o agente
+  no `GLOBAL` e a barra de avisos diz que a pasta não foi encontrada.
+
+- [ ] **B14. Ícone.** O dragão aparece no Dock, no ⌘Tab e no Finder (`~/Applications`), nítido nos
   tamanhos pequeno e grande.
 
 ## C. O que ficou do M1
@@ -202,5 +241,15 @@ O teste é a hora de confirmar ou trocar o que foi decidido sem consulta no diff
 - Arquivos não rastreados entram na conta.
 - Sem leitura periódica enquanto o agente trabalha.
 - Com pouco espaço, a empresa fica e o resumo some.
+
+E no que veio depois, também sem consulta:
+
+- ⌘N sempre no `GLOBAL`, e ⌘⇧N para repetir a pasta do agente em foco.
+- `clark PASTA` abre um agente lá e não vira padrão.
+- Projeto é a pasta com git ou com instruções para agente, até quatro níveis abaixo da empresa.
+- O apelido é do repositório e vale nas subpastas; fica no `config.json`.
+- A última sessão sai do arquivo da conversa, sem modelo, e só aparece em conversa nova de projeto.
+- A faixa some na primeira tecla, e não fica guardada para rever.
+- Card da lista lateral mais alto (104 px), com o projeto numa linha própria.
 
 Fora do teste, segue aberta a ampliação dos nomes de segredo com `*_PASS`, `*_PWD` e `*_PAT`.

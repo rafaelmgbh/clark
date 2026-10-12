@@ -44,13 +44,16 @@ final class ClarkFixture {
     }
 
     /// Controller já iniciado, sem `claude`: os agentes abrem `/bin/sh`.
+    /// - Parameter openGlobal: como no app, abre um agente no `GLOBAL` quando não há nenhum. Desligado por
+    ///   padrão: a maioria dos testes conta os agentes que ela mesma abre.
     func started(agents count: Int = 0, config: ClarkConfig? = nil, claude: String? = nil,
-                 claudeArgs: [String] = [], environment: [String: String]? = nil) -> MainWindowController {
+                 claudeArgs: [String] = [], environment: [String: String]? = nil,
+                 openGlobal: Bool = false) -> MainWindowController {
         let controller = controller(config: config)
         var options = CLIOptions()
         options.count = count
         controller.start(launch: launch(claude: claude, claudeArgs: claudeArgs, environment: environment),
-                         options: options)
+                         options: options, openGlobalWhenEmpty: openGlobal)
         return controller
     }
 

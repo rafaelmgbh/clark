@@ -30,8 +30,7 @@ final class AgentDiffTests: XCTestCase {
     }
 
     private func agent(in directory: String, of controller: MainWindowController) -> AgentPaneView {
-        controller.setDefaultDirectory(directory)
-        controller.addAgents(1)
+        controller.addAgents(1, in: directory)
         return controller.panes[controller.panes.count - 1]
     }
 

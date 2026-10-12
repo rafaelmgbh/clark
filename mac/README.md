@@ -43,29 +43,56 @@ clark [PASTA] [-n N] [--fresh] [--version] [-- argumentos extras do claude]
 
 | Opção | O que faz |
 |-------|-----------|
-| `PASTA` | Pasta dos agentes novos. Sem ela, vale a do último projeto aberto. |
-| `-n N` | Abre N agentes novos, de 0 a 16. |
+| `PASTA` | Abre um agente nessa pasta; com `-n`, N agentes. Se ela não existe, abrem no `GLOBAL`, com um aviso. |
+| `-n N` | Abre N agentes novos, de 0 a 16. Sem `PASTA`, no `GLOBAL`. |
 | `--fresh` | Não restaura os agentes da última vez. |
 | `--` | O que vier depois vai para o `claude` de todos os agentes. |
 
 Ao reabrir, o CLARK restaura os agentes com as mesmas conversas (`claude --resume`). Se a pasta de
-um agente não existe mais, ele abre na home, numa conversa nova.
+um agente não existe mais, ele abre na home, numa conversa nova. Sem agente para restaurar e sem
+pedido na linha de comando, o CLARK abre um agente no `GLOBAL`.
 
 Com o CLARK já aberto, `clark` só traz a janela para a frente: as opções são ignoradas.
 
 ### Projetos
 
-O botão `PROJETO` da barra (⌘D) lista as empresas e, dentro de cada uma, as pastas de projeto.
-Escolher um projeto abre um agente nele, como se o `claude` tivesse sido chamado dentro da pasta.
+Todo agente trabalha numa pasta, e o `claude` dele roda dentro dela: é dali que saem o `CLAUDE.md`,
+o `AGENTS.md`, o `.claude/` e os arquivos que o agente lê. O cabeçalho e o card mostram o projeto
+ao lado do nome do agente, na cor da empresa, e a empresa em cinza:
+`AGENT 2  PORTAL DE COMPRAS  ACME`.
 
-- `GLOBAL` abre o agente na home, sem projeto. A empresa dele é `AVULSO`.
-- O primeiro item de cada empresa é a pasta da própria empresa.
-- Uma pasta que não é repositório git e guarda repositórios vira um submenu com o que há dentro dela.
+O CLARK começa no `GLOBAL`: um agente na home, para o que não é de projeto nenhum. O ⌘N e o
+`+ AGENT` também abrem no `GLOBAL`. Para trabalhar num projeto, use o botão `PROJETO` da barra (⌘D):
+
+- `GLOBAL` abre um agente na home.
+- Cada empresa é um submenu com os projetos dela. Escolher um abre um agente na pasta do projeto.
+- Projeto é a pasta com repositório git ou com instruções para agente (`CLAUDE.md`, `AGENTS.md`,
+  `.claude`), até quatro níveis abaixo da pasta da empresa. Os do primeiro nível vêm soltos; os mais
+  fundos ficam sob o nome das pastas do caminho (`Sistemas › Vendas`).
+- `Outras pastas` junta as pastas do primeiro nível que não são projeto, e `Pasta da empresa` abre
+  na pasta da própria empresa.
+- A empresa que é ela mesma um repositório, ou que não tem nada dentro, abre direto, sem submenu.
 - `Outra pasta…` abre o seletor de pastas do macOS.
 
+O ⌘⇧N (`Novo agente nesta pasta`, também no botão direito do cabeçalho) abre outro agente na pasta
+do agente em foco. Com os 16 agentes abertos, nada abre e a barra avisa.
+
 A lista é lida do disco cada vez que o menu abre: são as subpastas das `roots` e os `paths` do
-`companies.json` (veja [Empresas](#empresas)). O ⌘N repete o último projeto escolhido. Com os 16
-agentes abertos, escolher um projeto só troca a pasta do próximo agente.
+`companies.json` (veja [Empresas](#empresas)). A busca não entra em repositório nem em pasta de
+dependências (`node_modules`, `vendor`, `venv`, `dist`, `build` e parecidas).
+
+**Apelidos.** O nome do projeto é o da pasta, arrumado: `portal_compras` vira `Portal Compras`.
+Para trocar, clique com o botão direito no cabeçalho do agente e escolha `Apelidar projeto…` (o item
+também está no menu `Agentes`). O apelido passa a valer no menu, no cabeçalho e no card, sobe para o
+topo do submenu da empresa e fica em `project_names` no `~/.config/clark/config.json`. Ele é do
+repositório: vale para qualquer subpasta. Apelido vazio volta ao nome da pasta.
+
+**Última sessão.** O agente que começa uma conversa nova num projeto mostra, entre o cabeçalho e o
+terminal, a faixa `ULTIMA SESSAO` com o que ficou da conversa anterior do Claude Code naquela pasta:
+quando foi, o título, o último pedido, o começo da última resposta e, em amarelo, a linha que fala
+do que ficou pendente, quando há. A faixa some na primeira tecla ou com um clique. O texto sai do
+arquivo da conversa, sem chamar modelo nenhum. Ela não aparece no `GLOBAL`, em conversa retomada,
+nem quando a pasta não tem conversa anterior; as conversas dos agentes abertos não contam.
 
 ### Diff
 
@@ -90,7 +117,8 @@ uma só: pedir o diff de outro agente troca o conteúdo dela.
 
 | Atalho | Ação |
 |--------|------|
-| ⌘N | Novo agente |
+| ⌘N | Novo agente no `GLOBAL` |
+| ⌘⇧N | Novo agente na pasta do agente em foco |
 | ⌘D | Abrir um agente num projeto |
 | ⌘⇧D | Ver o diff do agente em foco |
 | ⌘R | Reler o diff de todos os agentes |

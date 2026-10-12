@@ -19,13 +19,37 @@ struct AgentLaunch {
         PathTools.isDirectory(directory) ? directory : home
     }
 
+    func canonical(_ path: String) -> String {
+        PathTools.canonical(path, base: home, home: home)
+    }
+
     func company(forDirectory directory: String) -> Company {
-        resolver.resolve(canonicalPath: PathTools.canonical(usableDirectory(directory), base: home, home: home))
+        resolver.resolve(canonicalPath: canonical(usableDirectory(directory)))
     }
 
     /// Empresas e projetos que existem no disco agora, para o menu PROJETO.
-    func projectGroups() -> [ProjectGroup] {
-        resolver.projectGroups { PathTools.canonical($0, base: home, home: home) }
+    /// - Parameter nicknames: caminho -> apelido, como está no `config.json`.
+    func projectGroups(nicknames: [String: String] = [:]) -> [ProjectGroup] {
+        resolver.projectGroups(canonicalize: canonical, nicknames: nicknames)
+    }
+
+    /// A pasta é a home: o agente é do `GLOBAL`, fora de projeto e de empresa.
+    func isGlobal(_ directory: String) -> Bool {
+        canonical(usableDirectory(directory)) == canonical(home)
+    }
+
+    /// Pasta que dá o nome ao projeto do agente e que guarda o apelido dele. nil no `GLOBAL`.
+    func namedPath(forDirectory directory: String, nicknames: [String: String]) -> String? {
+        ProjectNaming.namedPath(canonicalPath: canonical(usableDirectory(directory)), canonicalHome: canonical(home),
+                                nicknames: ProjectNaming.canonical(nicknames, canonicalize: canonical),
+                                isRepository: ProjectCatalog.isRepository)
+    }
+
+    /// `GLOBAL`, o apelido do projeto ou o nome da pasta arrumado.
+    func projectName(forDirectory directory: String, nicknames: [String: String]) -> String {
+        ProjectNaming.name(canonicalPath: canonical(usableDirectory(directory)), canonicalHome: canonical(home),
+                           nicknames: ProjectNaming.canonical(nicknames, canonicalize: canonical),
+                           isRepository: ProjectCatalog.isRepository)
     }
 }
 
@@ -40,10 +64,14 @@ protocol AgentPaneDelegate: AnyObject {
     func paneRequestsZoom(_ pane: AgentPaneView)
     func paneRequestsClose(_ pane: AgentPaneView)
     func paneRequestsRename(_ pane: AgentPaneView)
+    /// Dar, trocar ou tirar o apelido do projeto do agente.
+    func paneRequestsNickname(_ pane: AgentPaneView)
+    /// Mais um agente na mesma pasta.
+    func paneRequestsSibling(_ pane: AgentPaneView)
     func paneRequestsDiff(_ pane: AgentPaneView)
 }
 
-/// Painel de um agente: moldura, cabeçalho, faixa de aviso e o terminal.
+/// Painel de um agente: moldura, cabeçalho, faixa de aviso, resumo da última sessão e o terminal.
 final class AgentPaneView: PixelView {
     static let border = 3
     static let stripHeight = 16
@@ -53,9 +81,15 @@ final class AgentPaneView: PixelView {
         + "Instale o Claude Code e reabra o CLARK.\r\n\r\n"
     static let launchFailed = "\r\n\u{1b}[1;31m  falha ao iniciar o processo.\u{1b}[0m\r\n"
     static let unfilteredShell = "Sem claude: o shell relê o rc e o filtro de variáveis não vale"
+    /// As conversas são lidas fora da thread principal: um arquivo grande não trava a janela.
+    private static let digestQueue = DispatchQueue(label: "clark.digest", qos: .utility)
 
     private(set) var name: String
     private(set) var directory: String
+    /// `GLOBAL`, o apelido do projeto ou o nome da pasta arrumado.
+    private(set) var project: String
+    /// Aberto na home: fora de projeto e de empresa.
+    let isGlobal: Bool
     let sessionID: String
     /// Passo de escurecimento da cor da empresa.
     let tone: Int
@@ -66,12 +100,15 @@ final class AgentPaneView: PixelView {
     /// Nomes das variáveis que a política de ambiente tirou deste agente. Nunca os valores.
     private(set) var removedVariables: [String] = []
     private(set) var bypassesPermissions = false
+    /// O `claude` abriu sem conversa para retomar. Só aí o resumo da última sessão interessa.
+    private(set) var startedNewConversation = false
     /// O que mudou no repositório da pasta do agente.
     let diff = DiffMonitor()
     weak var delegate: AgentPaneDelegate?
     var isFocused = false { didSet { if isFocused != oldValue { needsDisplay = true } } }
 
     let header: AgentHeaderView
+    let digestView = SessionDigestView()
     private let zoomButton = PixelButton(title: "[ ]", style: .mini, toolTip: "Zoom (⌘↩)")
     private let closeButton = PixelButton(title: "X", style: .miniClose, toolTip: "Fechar (⌘W)")
     private let launch: AgentLaunch
@@ -80,20 +117,28 @@ final class AgentPaneView: PixelView {
     private var previewAt = -Double.infinity
     /// Estado na última vez em que o painel avisou que mudou.
     private var reportedState = AgentState.boot
+    /// Pasta de configuração do Claude deste agente, conhecida a partir do `spawn`.
+    private var claudeConfigDir: String?
+    private var digestGeneration = 0
 
     var color: RGB { CompanyResolver.tone(company.color, index: tone) }
     var state: AgentState { machine.state }
+    /// Resumo da última sessão, enquanto está na tela.
+    var digest: SessionDigest? { digestView.digest }
 
     var snapshot: AgentSnapshot {
-        AgentSnapshot(name: name, company: company.name, color: color,
+        AgentSnapshot(name: name, project: project, company: isGlobal ? "" : company.name, color: color,
                       path: PathTools.short(directory, home: launch.home), state: machine.state, preview: preview,
                       diff: diff.summary)
     }
 
+    /// - Parameter nicknames: caminho -> apelido, como está no `config.json`.
     init(name: String, directory: String, sessionID: String, tone: Int, launch: AgentLaunch,
-         appearance: TerminalAppearance, clock: @escaping () -> Double) {
+         nicknames: [String: String] = [:], appearance: TerminalAppearance, clock: @escaping () -> Double) {
         self.name = name
         self.directory = launch.usableDirectory(directory)
+        project = launch.projectName(forDirectory: directory, nicknames: nicknames)
+        isGlobal = launch.isGlobal(directory)
         self.sessionID = sessionID
         self.tone = tone
         self.launch = launch
@@ -114,9 +159,13 @@ final class AgentPaneView: PixelView {
         zoomButton.onClick = { [weak self] in self.map { $0.delegate?.paneRequestsZoom($0) } }
         closeButton.onClick = { [weak self] in self.map { $0.delegate?.paneRequestsClose($0) } }
         diff.onChange = { [weak self] in self?.changed() }
+        digestView.theme = appearance.theme
+        digestView.isHidden = true
+        digestView.onDismiss = { [weak self] in self?.dismissDigest() }
         addSubview(header)
         addSubview(zoomButton)
         addSubview(closeButton)
+        addSubview(digestView)
         install(terminal)
     }
 
@@ -134,13 +183,17 @@ final class AgentPaneView: PixelView {
         machine.spawned(now: now)
         if let claude = launch.claudePath {
             let configDir = SessionLocator.configDir(environment: environment.variables, home: launch.home)
-            let command = ClaudeCommand.build(
-                extraArgs: launch.claudeArgs, sessionID: sessionID,
-                sessionExists: SessionLocator.sessionExists(sessionID, configDir: configDir))
+            let sessionExists = SessionLocator.sessionExists(sessionID, configDir: configDir)
+            let command = ClaudeCommand.build(extraArgs: launch.claudeArgs, sessionID: sessionID,
+                                              sessionExists: sessionExists)
+            claudeConfigDir = configDir
+            startedNewConversation = !sessionExists
             bypassesPermissions = command.bypassesPermissions
             terminal.startProcess(executable: claude, args: command.arguments, environment: environment.asArray,
                                   currentDirectory: directory)
         } else {
+            claudeConfigDir = nil
+            startedNewConversation = false
             bypassesPermissions = false
             terminal.feed(text: Self.missingClaude)
             terminal.startProcess(executable: launch.shell, args: ["-l"], environment: environment.asArray,
@@ -183,6 +236,8 @@ final class AgentPaneView: PixelView {
         terminal.onOutput = { [weak self] in self.map { $0.machine.output(now: $0.clock()) } }
         terminal.onUserInput = { [weak self] in
             guard let self else { return }
+            // Começou a digitar: o resumo já foi lido e devolve o espaço ao terminal.
+            self.dismissDigest()
             let before = self.machine.state
             self.machine.userInput(now: self.clock())
             if self.machine.state != before { self.changed() }
@@ -256,10 +311,56 @@ final class AgentPaneView: PixelView {
         changed()
     }
 
+    /// Os apelidos mudaram: o nome do projeto é recalculado.
+    func updateProject(nicknames: [String: String]) {
+        let updated = launch.projectName(forDirectory: directory, nicknames: nicknames)
+        guard updated != project else { return }
+        project = updated
+        changed()
+    }
+
+    // MARK: resumo da última sessão
+
+    /// Procura a conversa anterior da pasta e mostra o resumo dela. Só vale para o agente que começa
+    /// conversa nova num projeto: a conversa retomada já conta a própria história, e o `GLOBAL`
+    /// junta assuntos demais para um resumo dizer algo.
+    /// - Parameter excluding: conversas dos agentes abertos, que não são "a última sessão".
+    func loadDigest(excluding: Set<String>) {
+        guard !isGlobal, startedNewConversation, let configDir = claudeConfigDir else { return }
+        digestGeneration += 1
+        let generation = digestGeneration
+        let directory = launch.canonical(directory)
+        Self.digestQueue.async { [weak self] in
+            let digest = SessionDigestReader.latest(canonicalDirectory: directory, configDir: configDir,
+                                                    excluding: excluding)
+            DispatchQueue.main.async {
+                guard let self, generation == self.digestGeneration else { return }
+                self.show(digest)
+            }
+        }
+    }
+
+    /// Tira o resumo da tela e cancela a leitura em curso.
+    func dismissDigest() {
+        digestGeneration += 1
+        show(nil)
+    }
+
+    private func show(_ digest: SessionDigest?) {
+        guard digest != digestView.digest else { return }
+        digestView.digest = digest
+        digestView.isHidden = digest == nil
+        // O terminal muda de altura: o redesenho do agente não conta como trabalho.
+        machine.layoutChanged(now: clock())
+        needsLayout = true
+        needsDisplay = true
+    }
+
     func apply(_ appearance: TerminalAppearance) {
         terminalAppearance = appearance
         theme = appearance.theme
         header.theme = appearance.theme
+        digestView.theme = appearance.theme
         zoomButton.theme = appearance.theme
         closeButton.theme = appearance.theme
         terminal.apply(appearance)
@@ -279,8 +380,17 @@ final class AgentPaneView: PixelView {
         let menu = NSMenu()
         menu.autoenablesItems = false
         menu.addItem(actionItem("Renomear…") { [weak self] in self.map { $0.delegate?.paneRequestsRename($0) } })
+        // O `GLOBAL` não é projeto: não tem apelido.
+        let nickname = actionItem("Apelidar projeto…") { [weak self] in
+            self.map { $0.delegate?.paneRequestsNickname($0) }
+        }
+        nickname.isEnabled = !isGlobal
+        menu.addItem(nickname)
         menu.addItem(actionItem("Zoom") { [weak self] in self.map { $0.delegate?.paneRequestsZoom($0) } })
         menu.addItem(actionItem("Ver diff") { [weak self] in self.map { $0.delegate?.paneRequestsDiff($0) } })
+        menu.addItem(actionItem("Novo agente nesta pasta") { [weak self] in
+            self.map { $0.delegate?.paneRequestsSibling($0) }
+        })
         menu.addItem(actionItem("Fechar") { [weak self] in self.map { $0.delegate?.paneRequestsClose($0) } })
         menu.addItem(.separator())
         // Sem `claude` o painel é o shell de login, que relê o rc e devolve o que saiu do ambiente:
@@ -324,6 +434,7 @@ final class AgentPaneView: PixelView {
     // MARK: desenho
 
     private var headerBottom: Int { Self.border + AgentHeaderView.height + 2 }
+    private var digestHeight: Int { digestView.digest.map(SessionDigestView.height) ?? 0 }
 
     override func layout() {
         super.layout()
@@ -336,7 +447,9 @@ final class AgentPaneView: PixelView {
                                   height: AgentHeaderView.height)
         closeButton.frame = NSRect(x: width - border - closeWidth, y: border, width: closeWidth,
                                    height: AgentHeaderView.height)
-        let top = headerBottom + (bypassesPermissions ? Self.stripHeight : 0) + 4
+        let stripBottom = headerBottom + (bypassesPermissions ? Self.stripHeight : 0)
+        digestView.frame = NSRect(x: border, y: stripBottom, width: max(0, width - 2 * border), height: digestHeight)
+        let top = stripBottom + digestHeight + 4
         terminal.frame = NSRect(x: border + 6, y: top, width: max(1, width - 2 * border - 12),
                                 height: max(1, height - top - border - 4))
     }

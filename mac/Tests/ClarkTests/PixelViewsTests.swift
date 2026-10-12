@@ -9,9 +9,10 @@ final class PixelViewsTests: XCTestCase {
     /// Cor que não existe no tema: o que aparecer nela veio do agente.
     private let magenta = RGB(r: 1, g: 0, b: 1)
 
-    private func snapshot(_ state: AgentState = .idle, name: String = "AGENT 1", company: String = "ACME",
-                          preview: [String] = [], diff: DiffSummary? = nil) -> AgentSnapshot {
-        AgentSnapshot(name: name, company: company, color: magenta, path: "~/Projetos/acme", state: state,
+    private func snapshot(_ state: AgentState = .idle, name: String = "AGENT 1", project: String = "PORTAL",
+                          company: String = "ACME", path: String = "~/Projetos/acme", preview: [String] = [],
+                          diff: DiffSummary? = nil) -> AgentSnapshot {
+        AgentSnapshot(name: name, project: project, company: company, color: magenta, path: path, state: state,
                       preview: preview, diff: diff)
     }
 
@@ -53,7 +54,8 @@ final class PixelViewsTests: XCTestCase {
         // A fonte pixel só tem ASCII maiúsculo: um texto fora dela sairia como "?".
         let labels = AgentState.allCases.map { StateLabel.text($0, time: 0.75) }
             + ["CLARK", "AGENTS 16", "WORKING 16", "DONE 16", "IDLE 16", "GAME OVER 16", "EM FOCO", "AGENTES 16",
-               "SEM PERMISSOES", "NENHUM AGENTE ONLINE", "LENDO O AMBIENTE DO SHELL", "PRESS START  -  CMD+N"]
+               "SEM PERMISSOES", "NENHUM AGENTE ONLINE", "LENDO O AMBIENTE DO SHELL", "PRESS START  -  CMD+N",
+               "PROJETO", "GLOBAL", SessionDigestView.label, "HOJE 09:07", "ONTEM 23:40", "03/10 09:07", "31/12/2025"]
         for label in labels {
             XCTAssertEqual(PixelFont.normalize(label), label, label)
             XCTAssertFalse(PixelFont.fit(label, scale: 1, width: 10_000).contains("?"), label)
@@ -152,18 +154,72 @@ final class PixelViewsTests: XCTestCase {
         XCTAssertFalse(hollow.isColor(theme.yellow, atX: pill.x + 3, y: pill.y + 3))
     }
 
-    func testHeaderShowsTheCompanyWhenThereIsRoom() {
-        let with = RenderedImage(AgentHeaderView(snapshot: snapshot(company: "ACME")), width: 600,
-                                 height: AgentHeaderView.height)
-        let without = RenderedImage(AgentHeaderView(snapshot: snapshot(company: "")), width: 600,
-                                    height: AgentHeaderView.height)
-        // Depois do quadrado (x < 30) a cor do agente só aparece no nome da empresa.
-        XCTAssertGreaterThan(with.count(magenta, x: 30), 0)
-        XCTAssertEqual(without.count(magenta, x: 30), 0)
+    /// Onde o cabeçalho põe o projeto e a empresa, com o nome e o projeto na escala 2.
+    private func headerColumns(name: String = "AGENT 1", project: String) -> (project: Int, company: Int) {
+        let projectX = 30 + PixelFont.textWidth(name, scale: 2) + 14
+        return (projectX, projectX + PixelFont.textWidth(project, scale: 2) + 12)
+    }
 
-        let narrow = RenderedImage(AgentHeaderView(snapshot: snapshot(name: "NOME BEM COMPRIDO 123", company: "ACME")),
+    func testHeaderShowsTheProjectInTheAgentColorAndTheCompanyInGray() {
+        let columns = headerColumns(project: "PORTAL")
+        let pill = pillOrigin(width: 600)
+        let image = RenderedImage(AgentHeaderView(snapshot: snapshot(path: "")), width: 600,
+                                  height: AgentHeaderView.height)
+        XCTAssertGreaterThan(image.count(magenta, x: columns.project, y: 8,
+                                         width: PixelFont.textWidth("PORTAL", scale: 2), height: 14), 0,
+                             "projeto grande, na cor do agente")
+        XCTAssertEqual(image.count(magenta, x: columns.company), 0, "depois do projeto nada leva a cor do agente")
+        XCTAssertGreaterThan(image.count(theme.dim, x: columns.company, y: 11,
+                                         width: PixelFont.textWidth("ACME", scale: 1), height: 7), 0,
+                             "empresa pequena e apagada")
+
+        let global = RenderedImage(AgentHeaderView(snapshot: snapshot(project: "GLOBAL", company: "", path: "")),
+                                   width: 600, height: AgentHeaderView.height)
+        let globalColumns = headerColumns(project: "GLOBAL")
+        XCTAssertGreaterThan(global.count(magenta, x: globalColumns.project), 0)
+        XCTAssertEqual(global.count(theme.dim, x: globalColumns.company, width: pill.x - globalColumns.company), 0,
+                       "o GLOBAL não é de empresa nenhuma")
+    }
+
+    func testHeaderDoesNotRepeatTheCompanyNamedLikeTheProject() {
+        let columns = headerColumns(project: "ACME")
+        let image = RenderedImage(AgentHeaderView(snapshot: snapshot(project: "Acme", company: "ACME", path: "")),
+                                  width: 600, height: AgentHeaderView.height)
+        XCTAssertGreaterThan(image.count(magenta, x: columns.project), 0)
+        XCTAssertEqual(image.count(theme.dim, x: columns.company, width: pillOrigin(width: 600).x - columns.company), 0)
+    }
+
+    func testTightHeaderShrinksTheProjectBeforeTouchingTheName() {
+        // 480 px: o nome e o projeto na escala 2 não cabem até a pílula.
+        let snapshot = snapshot(name: "REVISOR DE PR", project: "Portal de Compras", path: "")
+        let image = RenderedImage(AgentHeaderView(snapshot: snapshot), width: 480, height: AgentHeaderView.height)
+        let nameWidth = PixelFont.textWidth("REVISOR DE PR", scale: 2)
+        let projectX = 30 + nameWidth + 14
+        let projectWidth = PixelFont.textWidth("PORTAL DE COMPRAS", scale: 1)
+        XCTAssertGreaterThan(image.count(theme.ink, x: 30 + nameWidth - 10, y: 8, width: 10, height: 14), 0,
+                             "o nome fica inteiro e grande")
+        XCTAssertGreaterThan(image.count(magenta, x: projectX + projectWidth - 5, y: 11, width: 5, height: 7), 0,
+                             "o projeto fica inteiro, na escala 1")
+        XCTAssertEqual(image.count(magenta, x: projectX, y: 0, width: 480, height: 11), 0)
+    }
+
+    func testNarrowHeaderShrinksTheNameInsteadOfCuttingIt() {
+        // 240 px, grade cheia: cortados, `AGENT 1` e `AGENT 2` virariam o mesmo `AGE...`.
+        let image = RenderedImage(AgentHeaderView(snapshot: snapshot(path: "")), width: 240,
+                                  height: AgentHeaderView.height)
+        let nameWidth = PixelFont.textWidth("AGENT 1", scale: 1)
+        XCTAssertGreaterThan(image.count(theme.ink, x: 30 + nameWidth - 5, y: 11, width: 5, height: 7), 0,
+                             "o número do agente continua lá")
+        XCTAssertEqual(image.count(theme.ink, x: 30 + nameWidth), 0, "nome na escala 1")
+        XCTAssertGreaterThan(image.count(magenta, x: 30 + nameWidth + 14, y: 11,
+                                         width: PixelFont.textWidth("PORTAL", scale: 1), height: 7), 0, "projeto")
+    }
+
+    func testVeryNarrowHeaderKeepsTheNameAndTheState() {
+        let narrow = RenderedImage(AgentHeaderView(snapshot: snapshot(name: "NOME BEM COMPRIDO 123")),
                                    width: 200, height: AgentHeaderView.height)
-        XCTAssertEqual(narrow.count(magenta, x: 30), 0, "sem espaço, a empresa some e o estado fica")
+        XCTAssertEqual(narrow.count(magenta, x: 30), 0, "sem espaço, o projeto some e o estado fica")
+        XCTAssertGreaterThan(narrow.count(theme.ink, x: 30, y: 8, width: 60, height: 14), 0, "nome")
         XCTAssertGreaterThan(narrow.count(theme.dim, x: 100), 0, "pílula do estado")
     }
 
@@ -246,15 +302,46 @@ final class PixelViewsTests: XCTestCase {
         XCTAssertEqual([selected, closed], [2, 1])
     }
 
-    func testCardShowsTheDiffSummaryOnTheStateLine() {
+    /// Onde o card põe o projeto: depois do estado, na mesma linha.
+    private var cardProjectX: Int { 14 + 9 + PixelFont.textWidth("WORKING...", scale: 1) + 10 }
+
+    func testCardShowsTheProjectBigAndShrinksALongOne() {
+        let short = render(AgentCardView(snapshot: snapshot()))
+        XCTAssertGreaterThan(short.count(magenta, x: cardProjectX, y: AgentCardView.projectY,
+                                         width: PixelFont.textWidth("PORTAL", scale: 2), height: 4), 0,
+                             "projeto na escala 2, na cor do agente")
+
+        let long = render(AgentCardView(snapshot: snapshot(project: "Portal de compras da empresa")))
+        XCTAssertEqual(long.count(magenta, x: cardProjectX, y: AgentCardView.projectY, width: cardWidth, height: 4), 0,
+                       "o nome comprido desce para a escala 1")
+        let width = PixelFont.textWidth("PORTAL DE COMPRAS DA EMPRESA", scale: 1)
+        XCTAssertGreaterThan(long.count(magenta, x: cardProjectX + width - 5, y: AgentCardView.projectY + 4,
+                                        width: 5, height: 7), 0, "e cabe inteiro")
+    }
+
+    func testCardShowsTheCompanyUnderTheProject() {
+        let width = PixelFont.textWidth("ACME", scale: 1)
+        let with = render(AgentCardView(snapshot: snapshot()))
+        XCTAssertGreaterThan(with.count(theme.dim, x: 14, y: AgentCardView.detailY, width: width, height: 7), 0)
+
+        let global = render(AgentCardView(snapshot: snapshot(project: "GLOBAL", company: "")))
+        XCTAssertEqual(global.count(theme.dim, x: 14, y: AgentCardView.detailY, width: width, height: 7), 0,
+                       "o GLOBAL não tem empresa: o caminho começa ali, em outro tom")
+        let same = render(AgentCardView(snapshot: snapshot(project: "Acme", company: "ACME")))
+        XCTAssertEqual(same.count(theme.dim, x: 14, y: AgentCardView.detailY, width: width, height: 7), 0,
+                       "a empresa com o nome do projeto não se repete")
+    }
+
+    func testCardShowsTheDiffSummaryOnTheDetailLine() {
         let diff = DiffSummary(files: 4, added: 12, removed: 3)
         let card = AgentCardView(snapshot: snapshot(.idle, diff: diff))
         let badgeX = cardWidth - 8 - DiffBadge.width(diff)
+        let y = AgentCardView.detailY
         let image = render(card)
-        XCTAssertGreaterThan(image.count(theme.green, x: badgeX, y: 30, width: 20, height: 7), 0, "+12 em verde")
-        XCTAssertGreaterThan(image.count(theme.red, x: badgeX, y: 30, width: DiffBadge.width(diff), height: 7), 0)
+        XCTAssertGreaterThan(image.count(theme.green, x: badgeX, y: y, width: 20, height: 7), 0, "+12 em verde")
+        XCTAssertGreaterThan(image.count(theme.red, x: badgeX, y: y, width: DiffBadge.width(diff), height: 7), 0)
         XCTAssertEqual(image.count(theme.green, x: 0, y: 0, width: badgeX, height: AgentCardView.height), 0)
-        XCTAssertGreaterThan(image.count(magenta, x: 90, y: 30, width: 60, height: 7), 0, "a empresa continua na linha")
+        XCTAssertGreaterThan(image.count(theme.dim, x: 14, y: y, width: 23, height: 7), 0, "a empresa continua na linha")
 
         card.snapshot = snapshot(.idle)
         let plain = render(card)
@@ -263,16 +350,79 @@ final class PixelViewsTests: XCTestCase {
 
     func testCardWithBigNumbersStillFitsTheSummary() {
         let diff = DiffSummary(files: 1234, added: 98_765, removed: 43_210)
-        XCTAssertLessThan(DiffBadge.width(diff), cardWidth - 110, "cabe ao lado do estado")
+        XCTAssertLessThan(DiffBadge.width(diff), cardWidth - 110, "cabe ao lado da empresa")
         let image = render(AgentCardView(snapshot: snapshot(.working, diff: diff)))
-        XCTAssertGreaterThan(image.count(theme.red, x: 100, y: 30, width: cardWidth - 100, height: 7), 0)
+        XCTAssertGreaterThan(image.count(theme.red, x: 100, y: AgentCardView.detailY, width: cardWidth - 100,
+                                         height: 7), 0)
     }
 
     func testCardPreviewChangesTheDrawing() {
         let empty = render(AgentCardView(snapshot: snapshot()))
         let filled = render(AgentCardView(snapshot: snapshot(preview: ["compilando o projeto", "42 testes verdes"])))
         let background = theme.bg2
-        XCTAssertLessThan(filled.count(background, y: 44, height: 36), empty.count(background, y: 44, height: 36))
+        let (y, height) = (AgentCardView.previewY, AgentCardView.height - AgentCardView.previewY)
+        XCTAssertLessThan(filled.count(background, y: y, height: height), empty.count(background, y: y, height: height))
+    }
+
+    // MARK: resumo da última sessão
+
+    private let digestDate = Date(timeIntervalSince1970: 1_760_000_000)
+
+    private func digest(pending: String? = "falta rodar a migração") -> SessionDigest {
+        SessionDigest(title: "Ajuste do relatório", prompt: "corrige o total", answer: ["Total corrigido.", "Suíte verde."],
+                      pending: pending, date: digestDate)
+    }
+
+    private func digestView(_ digest: SessionDigest?) -> SessionDigestView {
+        let view = SessionDigestView()
+        view.digest = digest
+        view.now = { [digestDate] in digestDate }
+        return view
+    }
+
+    func testDigestStripHeightFollowsTheLines() {
+        XCTAssertEqual(SessionDigestView.height(for: digest()), 10 + 15 * 4, "título, pedido, resposta e pendência")
+        XCTAssertEqual(SessionDigestView.height(for: digest(pending: nil)), 10 + 15 * 4, "sem pendência: duas da resposta")
+        let onlyTitle = SessionDigest(title: "Só o título", prompt: nil, date: digestDate)
+        XCTAssertEqual(SessionDigestView.height(for: onlyTitle), 10 + 15)
+    }
+
+    func testDigestStripShowsTheLabelTheDateAndTheLines() {
+        let height = SessionDigestView.height(for: digest())
+        let image = RenderedImage(digestView(digest()), width: 600, height: height)
+        let label = PixelFont.textWidth(SessionDigestView.label, scale: 1)
+        XCTAssertTrue(image.isColor(theme.accent, atX: 1, y: height / 2), "faixa lateral")
+        XCTAssertGreaterThan(image.count(theme.accent, x: 12, y: 9, width: label, height: 7), 0, "ULTIMA SESSAO")
+        XCTAssertGreaterThan(image.count(theme.dim, x: 12 + label + 10, y: 9,
+                                         width: PixelFont.textWidth("HOJE 00:00", scale: 1), height: 7), 0, "HOJE hh:mm")
+        XCTAssertGreaterThan(image.count(theme.dim, x: 600 - 20, y: 9, width: 20, height: 7), 0, "o X de fechar")
+
+        // O texto corrido é suavizado: confere-se pelo fundo que ele cobre, linha a linha.
+        let empty = RenderedImage(digestView(nil), width: 600, height: height)
+        for row in 0..<4 {
+            let y = 5 + 15 * row
+            XCTAssertLessThan(image.count(theme.bg2, x: 12, y: y, width: 560, height: 15),
+                              empty.count(theme.bg2, x: 12, y: y, width: 560, height: 15), "linha \(row)")
+        }
+    }
+
+    func testDigestStripPendingLineIsYellow() {
+        let height = SessionDigestView.height(for: digest())
+        let with = RenderedImage(digestView(digest()), width: 600, height: height)
+        let without = RenderedImage(digestView(digest(pending: nil)), width: 600, height: height)
+        XCTAssertGreaterThan(with.count(theme.yellow, y: 5 + 15 * 3, height: 15), 0)
+        XCTAssertEqual(without.count(theme.yellow), 0)
+        XCTAssertEqual(with.count(theme.yellow, y: 0, height: 5 + 15 * 3), 0, "só a linha da pendência")
+    }
+
+    func testDigestStripClosesOnClick() {
+        var dismissed = 0
+        let view = digestView(digest())
+        view.frame = NSRect(x: 0, y: 0, width: 600, height: 70)
+        view.onDismiss = { dismissed += 1 }
+        view.mouseDown(with: click(view, x: 300, y: 20))
+        XCTAssertEqual(dismissed, 1)
+        XCTAssertTrue(view.acceptsFirstMouse(for: nil), "fecha no primeiro clique, mesmo com a janela atrás")
     }
 
     // MARK: barra superior
@@ -326,22 +476,9 @@ final class PixelViewsTests: XCTestCase {
         XCTAssertEqual(AgentStats(states: []), AgentStats())
     }
 
-    func testProjectTitleNamesTheLastTwoFolders() {
-        XCTAssertEqual(TopBarView.projectTitle(shortPath: "~"), "PROJETO GLOBAL")
-        XCTAssertEqual(TopBarView.projectTitle(shortPath: "~/x"), "PROJETO ~/x")
-        XCTAssertEqual(TopBarView.projectTitle(shortPath: "~/Projetos/acme/app"), "PROJETO acme/app")
-        XCTAssertEqual(TopBarView.projectTitle(shortPath: "/opt/x"), "PROJETO /opt/x")
-        XCTAssertEqual(TopBarView.projectTitle(shortPath: "/opt/acme/app"), "PROJETO acme/app")
-        XCTAssertEqual(TopBarView.projectTitle(shortPath: "/"), "PROJETO /")
-    }
-
-    func testProjectTitleKeepsTheEndOfALongName() {
-        let exact = String(repeating: "a", count: 14) + "/" + String(repeating: "b", count: 13)
-        XCTAssertEqual(TopBarView.projectTitle(shortPath: "~/Projetos/" + exact), "PROJETO " + exact)
-        let long = String(repeating: "c", count: 30) + "/fim"
-        let title = TopBarView.projectTitle(shortPath: "~/Projetos/" + long)
-        XCTAssertEqual(title, "PROJETO …" + long.suffix(27))
-        XCTAssertTrue(title.hasSuffix("/fim"))
+    func testProjectButtonHasAFixedTitle() {
+        // O projeto de cada agente está no cabeçalho dele; o botão só abre o menu.
+        XCTAssertEqual(TopBarView().projectButton.title, "PROJETO")
     }
 
     // MARK: avisos
@@ -403,9 +540,11 @@ final class PixelViewsTests: XCTestCase {
         sidebar.setCards(cards)
         let image = RenderedImage(sidebar, width: SidebarView.width, height: 600)
         XCTAssertEqual(sidebar.cards.count, 3)
-        XCTAssertEqual(cards[0].frame, NSRect(x: 3, y: 3, width: 304, height: 86))
-        XCTAssertEqual(cards[1].frame.minY, 92)
-        XCTAssertEqual(cards[2].frame.minY, 181)
+        let step = CGFloat(AgentCardView.height + 3)
+        XCTAssertEqual(AgentCardView.height, 104, "três linhas de texto e duas de prévia")
+        XCTAssertEqual(cards[0].frame, NSRect(x: 3, y: 3, width: 304, height: 104))
+        XCTAssertEqual(cards[1].frame.minY, 3 + step)
+        XCTAssertEqual(cards[2].frame.minY, 3 + 2 * step)
         XCTAssertEqual(Int(sidebar.closeAllButton.frame.maxX), SidebarView.width)
         XCTAssertTrue(image.isColor(theme.shadow, atX: 1, y: 300), "borda esquerda")
         XCTAssertTrue(image.isColor(theme.bg2, atX: 200, y: 3), "cabeçalho")

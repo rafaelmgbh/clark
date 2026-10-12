@@ -73,6 +73,8 @@ mac/
 | `QueueStatus` | Decodifica o JSON de `fila.py status --json` e de `runstate.py find` e `report`. | Foundation |
 | `PixelFont`, `Sprites`, `Themes` | Dados portados do original: glifos, quadros do dragão, três paletas. | nada |
 | `GridLayout` | Linhas e colunas da grade para N painéis e o tamanho da janela. | nada |
+| `ProjectCatalog`, `ProjectNaming` | Empresas e projetos que existem no disco, para o menu `PROJETO`; nome do projeto de uma pasta, com os apelidos. | `CompanyResolver`, sistema de arquivos |
+| `SessionDigest` | Resumo da última conversa do Claude Code numa pasta, tirado do fim do arquivo da conversa. | sistema de arquivos |
 | `GitDiff`, `GitLocator` | Interpreta a saída do git em arquivos com estado e contagem de linhas, soma os totais e classifica as linhas de um diff; acha o `git` no `PATH` capturado. | sistema de arquivos |
 
 ### Clark (AppKit)
@@ -81,7 +83,8 @@ mac/
 |---|---|
 | `ShellEnvironment` | Captura o ambiente do shell de login uma vez na abertura. |
 | `AgentPaneView` | Cabeçalho desenhado + subclasse de `LocalProcessTerminalView`; traduz eventos do terminal para a máquina de estado. |
-| `AgentCardView` | Card da lista lateral: nome, estado, empresa, caminho e as duas últimas linhas úteis do terminal. |
+| `AgentCardView` | Card da lista lateral: nome, estado, projeto, empresa, caminho e as duas últimas linhas úteis do terminal. |
+| `SessionDigestView` | Faixa `ULTIMA SESSAO` entre o cabeçalho e o terminal do agente que começa conversa nova num projeto. |
 | `GitRunner` | Roda o git na pasta de um agente, só para ler, com tempo e tamanho limitados. |
 | `DiffMonitor` | Lê o diff da pasta de um agente fora da thread principal e guarda o último resultado. |
 | `DiffBadge`, `DiffWindowController` | Resumo do diff no cabeçalho e no card; janela única com a lista de arquivos e o diff do escolhido. |
@@ -145,7 +148,17 @@ Quem autentica o `claude` por variável de ambiente precisa listá-la em `env_al
 
 **Cor.** Cabeçalho, card e dragão usam a cor da empresa. Agentes da mesma empresa escurecem em passos de 15% (0, 15, 30, 45 e recomeça). A paleta tem oito cores: duas empresas detectadas pela pasta podem cair na mesma, e `color` em `companies.json` desfaz o empate.
 
-**Menu de projetos.** O botão `PROJETO` da barra (⌘D) troca o seletor de pastas do original por um menu: `GLOBAL` (a home, empresa `AVULSO`), as empresas com seus projetos e `Outra pasta…` (o seletor do macOS). Escolher um item abre um agente naquela pasta e ela passa a ser a do ⌘N; com o limite de agentes atingido, só a pasta muda. A lista vem do disco a cada abertura do menu: as subpastas visíveis das `roots` e os `paths` declarados que existem, agrupados pelo nome que a resolução acima dá a cada um. Assim, tudo o que aparece numa empresa abre como agente dela; a pasta que resolveria para outra empresa (um `path` declarado dentro de outra, um link simbólico) fica de fora. Há um nível de aninhamento: a pasta sem `.git` que guarda pelo menos um repositório vira submenu.
+**Projeto do agente.** Todo agente tem uma pasta, e o `claude` roda dentro dela: é o que faz o `CLAUDE.md`, o `AGENTS.md` e o `.claude/` do projeto valerem. O agente aberto na home é o `GLOBAL`, fora de projeto. Nos outros, o nome do projeto é o apelido, quando existe, ou o nome arrumado (`portal_compras` vira `Portal Compras`) do repositório em que a pasta está, ou da própria pasta quando ela não está em repositório. O cabeçalho mostra `AGENT 2  PORTAL DE COMPRAS  ACME`: o projeto na cor da empresa e a empresa em cinza, omitida no `GLOBAL` e quando é igual ao projeto. Sem largura, o projeto e depois o nome passam para a fonte pequena antes de qualquer corte. O card tem 104 px de altura, com o projeto numa linha própria.
+
+**Início.** O CLARK restaura os agentes salvos. Sem nenhum, e sem pedido na linha de comando, abre um agente no `GLOBAL`. O ⌘N e o `+ AGENT` abrem sempre no `GLOBAL`; o ⌘⇧N (`Novo agente nesta pasta`) repete a pasta do agente em foco. Não existe mais pasta padrão: o `cwd` do `config.json` é preservado no arquivo e ignorado.
+
+**Menu de projetos.** O botão `PROJETO` da barra (⌘D) troca o seletor de pastas do original por um menu: `GLOBAL`, as empresas e `Outra pasta…` (o seletor do macOS). Cada empresa é um submenu com, de cima para baixo: os projetos apelidados; os projetos do primeiro nível; os mais fundos, sob um título com as pastas do caminho (`Sistemas › Vendas`); `Outras pastas`, com as pastas do primeiro nível que não são projeto; e `Pasta da empresa`. A empresa de uma pasta só que é repositório, ou que não tem nada dentro, abre direto. Escolher um item abre um agente naquela pasta; com o limite de agentes atingido, nada abre e a barra avisa.
+
+Projeto é a pasta com `.git` ou com instruções para agente (`CLAUDE.md`, `AGENTS.md`, `.claude`). A busca desce até quatro níveis abaixo da pasta da empresa, em largura, e para depois de ler 4.000 pastas; não entra em repositório, em pasta oculta nem em pasta de dependências ou de build (`node_modules`, `vendor`, `venv`, `dist`, `build`, `target`, `__pycache__`, `Pods`, `DerivedData`). A lista vem do disco a cada abertura do menu: as subpastas visíveis das `roots` e os `paths` declarados que existem, agrupados pelo nome que a resolução acima dá a cada um. Assim, tudo o que aparece numa empresa abre como agente dela; a pasta que resolveria para outra empresa (um `path` declarado dentro de outra, um link simbólico) fica de fora, e a mesma pasta alcançada por dois caminhos entra uma vez. O tipo de cada entrada sai da própria listagem do diretório, e só link simbólico passa por `realpath`: numa árvore de 66 projetos e 6.800 subpastas, o menu monta em 70 ms.
+
+**Apelidos.** `Apelidar projeto…`, no menu do cabeçalho e no menu `Agentes`, dá ao projeto um nome de até 40 caracteres. O apelido fica em `project_names` no `config.json`, pelo caminho da pasta que dá o nome ao projeto (o repositório), e vale para todo agente aberto nela ou numa subpasta. Texto vazio, ou igual ao nome arrumado da pasta, tira o apelido. O agente do `GLOBAL` não tem apelido.
+
+**Última sessão.** O agente que começa conversa nova num projeto mostra, entre o cabeçalho e o terminal, a faixa `ULTIMA SESSAO`: a data (`HOJE 09:07`, `ONTEM 23:40`, `03/10 09:07`), o título da conversa, o último pedido, até duas linhas do começo da última resposta e, em amarelo, a linha que fala de pendência, que toma o lugar de uma linha da resposta. O texto sai do fim (256 KiB) do arquivo da conversa mais nova daquela pasta em `projects/` da configuração do Claude Code, tentando até cinco conversas, sem chamar modelo nenhum: custa uma leitura de arquivo, fora da thread principal. A faixa some na primeira tecla ou com um clique, e a resposta que chega depois disso é descartada. Não aparece no `GLOBAL`, em conversa retomada, sem `claude`, nem quando não há conversa anterior; as conversas dos agentes abertos não contam como a última. A pendência é o item de lista desmarcado (`- [ ]`) ou a linha com uma destas palavras inteiras: `pendente`, `pendência`, `falta`, `aguardando`, `próximo passo`, `ainda não`, `TODO` e as equivalentes em inglês. A frase que diz que não há pendência (`sem pendências`, `nada pendente`) não conta.
 
 ## Diff do agente
 
@@ -217,7 +230,8 @@ O tique de animação é de 100 ms, como no original, e só redesenha o que est�
 
 | macOS | Ação | Original |
 |---|---|---|
-| ⌘N | novo agente | Ctrl+Shift+N |
+| ⌘N | novo agente no `GLOBAL` | Ctrl+Shift+N |
+| ⌘⇧N | novo agente na pasta do agente em foco | não tem |
 | ⌘W | fechar agente | Ctrl+Shift+W |
 | ⌘↩ | zoom no agente | Ctrl+Shift+Enter |
 | ⌘L | alternar foco e grade | Ctrl+Shift+L |
@@ -232,13 +246,13 @@ O tique de animação é de 100 ms, como no original, e só redesenha o que est�
 | duplo clique no cabeçalho | renomear (20 caracteres) | igual |
 | Enter em GAME OVER | reabrir o agente | igual |
 
-Linha de comando, pelo atalho `clark`: `clark [PASTA] [-n N] [--no-splash] [--fresh] [--version] [-- argumentos do claude]`. `--no-splash` é aceito desde o M1 e passa a ter efeito no M3. `--export-icon ARQUIVO` e `--icon-size N` (16 a 1024, padrão 256) gravam o ícone em PNG e saem sem abrir a janela; servem ao `build.sh` e ficam fora do texto de ajuda. Com o CLARK já aberto, o atalho só traz a janela para a frente e as opções são ignoradas.
+Linha de comando, pelo atalho `clark`: `clark [PASTA] [-n N] [--no-splash] [--fresh] [--version] [-- argumentos do claude]`. `PASTA` abre um agente nela (com `-n`, N agentes) e não vira padrão; se não existe, os agentes pedidos abrem no `GLOBAL`, com um aviso. `-n` sem `PASTA` abre no `GLOBAL`. `--no-splash` é aceito desde o M1 e passa a ter efeito no M3. `--export-icon ARQUIVO` e `--icon-size N` (16 a 1024, padrão 256) gravam o ícone em PNG e saem sem abrir a janela; servem ao `build.sh` e ficam fora do texto de ajuda. Com o CLARK já aberto, o atalho só traz a janela para a frente e as opções são ignoradas.
 
 ## Configuração
 
 Tudo em `~/.config/clark/`.
 
-`config.json`: `theme` (`dark`, `white`, `magick`), `layout` (`focus`, `grid`), `font` (padrão `Menlo 12`), `font_scale` (0,6 a 2,5), `dragons`, `queue_visible`, `cwd`, `skills_dir`, `main_agent` e `agents`, lista de `{name, cwd, session_id, color}`, em que `color` é o tom do agente dentro da empresa (0 a 3).
+`config.json`: `theme` (`dark`, `white`, `magick`), `layout` (`focus`, `grid`), `font` (padrão `Menlo 12`), `font_scale` (0,6 a 2,5), `dragons`, `queue_visible`, `cwd` (do original; preservado e ignorado), `skills_dir`, `main_agent`, `project_names` (caminho → apelido do projeto) e `agents`, lista de `{name, cwd, session_id, color}`, em que `color` é o tom do agente dentro da empresa (0 a 3).
 
 `companies.json`: descrito em Isolamento por empresa.
 

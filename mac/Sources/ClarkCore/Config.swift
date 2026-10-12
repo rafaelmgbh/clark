@@ -34,12 +34,14 @@ public struct ClarkConfig {
     public var skillsDir: String?
     public var mainAgent = 0
     public var agents: [SavedAgent] = []
+    /// Apelidos dados pelo usuário: caminho da pasta -> nome do projeto no menu, no cabeçalho e no card.
+    public var projectNames: [String: String] = [:]
     /// Chaves que esta versão não conhece: voltam para o arquivo como vieram.
     public var unknown: [String: Any] = [:]
 
     private static let knownKeys: Set<String> = [
         "theme", "layout", "font", "font_scale", "dragons", "queue_visible",
-        "cwd", "skills_dir", "main_agent", "agents",
+        "cwd", "skills_dir", "main_agent", "agents", "project_names",
     ]
 
     public init() {}
@@ -66,6 +68,13 @@ public struct ClarkConfig {
                            tone: Self.integer(entry["color"]).map { abs($0) % CompanyResolver.toneCount })
             }
         }
+        if let names = object["project_names"] as? [String: Any] {
+            for (path, value) in names where !path.isEmpty {
+                if let text = value as? String, let name = ProjectNaming.sanitizedNickname(text) {
+                    projectNames[path] = name
+                }
+            }
+        }
         unknown = object.filter { !Self.knownKeys.contains($0.key) }
     }
 
@@ -88,6 +97,7 @@ public struct ClarkConfig {
             entry["color"] = agent.tone
             return entry
         }
+        object["project_names"] = projectNames.isEmpty ? nil : projectNames
         return object
     }
 

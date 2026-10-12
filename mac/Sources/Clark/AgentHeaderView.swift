@@ -4,6 +4,9 @@ import ClarkCore
 /// O que o cabeçalho e o card mostram de um agente.
 struct AgentSnapshot: Equatable {
     var name: String
+    /// Projeto da pasta do agente: o apelido, o nome da pasta arrumado ou `GLOBAL`.
+    var project: String = ""
+    /// Vazio no agente do `GLOBAL`, que não é de empresa nenhuma.
     var company: String
     /// Cor da empresa já no tom deste agente.
     var color: RGB
@@ -19,6 +22,8 @@ struct AgentSnapshot: Equatable {
 /// lugar do mascote, que chega no M3.
 final class AgentHeaderView: PixelView {
     static let height = 30
+    /// Abaixo desta largura a pílula do estado encolhe para o nome e o projeto caberem.
+    static let compactWidth = 420
 
     var snapshot: AgentSnapshot { didSet { if snapshot != oldValue { needsDisplay = true } } }
     /// Relógio das animações, em segundos.
@@ -55,23 +60,42 @@ final class AgentHeaderView: PixelView {
         Pixel.fill(context, 8, (height - square) / 2, square, square, snapshot.color)
         Pixel.frame(context, 8, (height - square) / 2, square, square, thickness: 2, snapshot.color.darkened(0.35))
 
-        var x = 8 + square + 8
-        let name = PixelFont.fit(snapshot.name, scale: 2, width: max(60, width - x - 200))
-        Pixel.text(context, name, x, (height - 14) / 2, scale: 2, theme.ink, shadow: theme.shadow)
-        x += PixelFont.textWidth(name, scale: 2) + 14
-
-        let scale = width < 300 ? 1 : 2
+        let scale = width < Self.compactWidth ? 1 : 2
         let pillWidth = PixelFont.textWidth("WORKING...", scale: scale) + 16
         let pillHeight = 20
         let pillX = width - pillWidth - 6
         let pillY = (height - pillHeight) / 2
-
-        // Entre o nome e a pílula: a empresa primeiro, o resumo do diff encostado na pílula se couber,
-        // e o caminho com o que sobrar.
         var right = pillX - 10
-        let companyWidth = PixelFont.textWidth(snapshot.company, scale: 1)
-        if right - x >= companyWidth {
-            Pixel.text(context, snapshot.company, x, (height - 7) / 2, scale: 1, snapshot.color)
+
+        // O nome e o projeto dividem o que há até a pílula. Apertou: o projeto desce para a escala 1,
+        // depois o nome, e só então o nome é cortado. Cortados, `AGENT 1` e `AGENT 2` ficariam iguais.
+        var x = 8 + square + 8
+        let project = PixelFont.normalize(snapshot.project)
+        let room = right - x
+        let nameWidth = PixelFont.textWidth(snapshot.name, scale: 2)
+        var nameScale = 2, projectScale = 2
+        if !project.isEmpty, nameWidth + 14 + PixelFont.textWidth(project, scale: 2) > room {
+            projectScale = 1
+            if nameWidth + 14 + PixelFont.textWidth(project, scale: 1) > room { nameScale = 1 }
+        }
+        let reserved = project.isEmpty ? 0 : min(PixelFont.textWidth(project, scale: projectScale), room / 2) + 14
+        let name = PixelFont.fit(snapshot.name, scale: nameScale, width: max(60, room - reserved))
+        Pixel.text(context, name, x, (height - 7 * nameScale) / 2, scale: nameScale, theme.ink,
+                   shadow: nameScale == 2 ? theme.shadow : nil)
+        x += PixelFont.textWidth(name, scale: nameScale) + 14
+        if !project.isEmpty, right - x >= PixelFont.textWidth("A...", scale: projectScale) {
+            let shown = PixelFont.fit(project, scale: projectScale, width: right - x)
+            Pixel.text(context, shown, x, (height - 7 * projectScale) / 2, scale: projectScale, snapshot.color,
+                       shadow: projectScale == 2 ? theme.shadow : nil)
+            x += PixelFont.textWidth(shown, scale: projectScale) + 12
+        }
+
+        // Depois do projeto: a empresa, o resumo do diff encostado na pílula se couber, e o caminho
+        // com o que sobrar. A empresa que tem o mesmo nome do projeto não se repete.
+        let company = PixelFont.normalize(snapshot.company)
+        let companyWidth = PixelFont.textWidth(company, scale: 1)
+        if !company.isEmpty, company != project, right - x >= companyWidth {
+            Pixel.text(context, company, x, (height - 7) / 2, scale: 1, theme.dim)
             x += companyWidth + 10
         }
         if let diff = snapshot.diff {
@@ -81,9 +105,8 @@ final class AgentHeaderView: PixelView {
                 right -= badgeWidth + 10
             }
         }
-        let room = right - x
-        if room > 60 {
-            Pixel.mono(context, snapshot.path, x, (height - 12) / 2, width: room, size: 9, theme.dim,
+        if right - x > 60 {
+            Pixel.mono(context, snapshot.path, x, (height - 12) / 2, width: right - x, size: 9, theme.dim,
                        truncate: .byTruncatingHead)
         }
 

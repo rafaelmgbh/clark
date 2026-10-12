@@ -26,7 +26,7 @@ final class TopBarView: PixelView {
     private static let contentHeight = 46
 
     var stats = AgentStats() { didSet { if stats != oldValue { needsDisplay = true } } }
-    let projectButton = PixelButton(title: "PROJETO GLOBAL", toolTip: "Abrir agente num projeto (⌘D)")
+    let projectButton = PixelButton(title: "PROJETO", toolTip: "Abrir agente num projeto (⌘D)")
     let layoutButton = PixelButton(title: "FOCO", toolTip: "Alternar layout foco / grade (⌘L)")
     let addButton = PixelButton(title: "+ AGENT", style: .primary, toolTip: "Novo agente (⌘N)")
 
@@ -40,15 +40,6 @@ final class TopBarView: PixelView {
 
     override var theme: Theme {
         didSet { [projectButton, layoutButton, addButton].forEach { $0.theme = theme } }
-    }
-
-    /// `PROJETO acme/app`: as duas últimas pastas, com reticências no começo quando passam de 28 caracteres.
-    /// A home é o `GLOBAL`, fora de projeto.
-    static func projectTitle(shortPath: String) -> String {
-        if shortPath == "~" { return "PROJETO GLOBAL" }
-        let folders = shortPath.split(separator: "/")
-        let name = folders.count > 2 ? folders.suffix(2).joined(separator: "/") : shortPath
-        return name.count > 28 ? "PROJETO …" + name.suffix(27) : "PROJETO " + name
     }
 
     private var buttonsLeft: Int {

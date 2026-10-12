@@ -23,6 +23,7 @@ final class ClarkConfigTests: XCTestCase {
         XCTAssertNil(config.skillsDir)
         XCTAssertEqual(config.mainAgent, 0)
         XCTAssertTrue(config.agents.isEmpty)
+        XCTAssertEqual(config.projectNames, [:])
     }
 
     func testValidValues() {
@@ -101,6 +102,16 @@ final class ClarkConfigTests: XCTestCase {
                                        SavedAgent(name: nil, cwd: nil, sessionID: nil, tone: nil)])
     }
 
+    func testProjectNamesKeepOnlyTextForAPath() {
+        let config = parse("""
+        {"project_names": {"/a/compras": "Compras Acme", "/a/vazio": "", "/a/numero": 7, "": "sem pasta",
+                           "/a/espacos": "   ", "/a/longo": "  Loja   do  João  "}}
+        """)
+        XCTAssertEqual(config.projectNames, ["/a/compras": "Compras Acme", "/a/longo": "Loja do João"])
+        XCTAssertEqual(parse(#"{"project_names": ["lista"]}"#).projectNames, [:])
+        XCTAssertEqual(parse(#"{"project_names": "texto"}"#).projectNames, [:])
+    }
+
     func testAtMostSixteenAgents() {
         let entries = Array(repeating: #"{"name": "A"}"#, count: 20).joined(separator: ",")
         XCTAssertEqual(parse(#"{"agents": [\#(entries)]}"#).agents.count, 16)
@@ -137,6 +148,16 @@ final class ClarkConfigTests: XCTestCase {
         XCTAssertEqual(agents?[1].isEmpty, true)
         XCTAssertEqual(ClarkConfig(json: object).agents, config.agents)
         XCTAssertEqual((ClarkConfig().jsonObject()["font"] as? String), "Menlo 12")
+        XCTAssertNil(object["project_names"], "sem apelido, a chave não vai para o arquivo")
+    }
+
+    func testProjectNamesSurviveTheRoundTrip() {
+        var config = ClarkConfig()
+        config.projectNames = ["/a/compras": "Compras Acme"]
+        let object = config.jsonObject()
+        XCTAssertEqual(object["project_names"] as? [String: String], ["/a/compras": "Compras Acme"])
+        XCTAssertEqual(ClarkConfig(json: object).projectNames, config.projectNames)
+        XCTAssertNil(ClarkConfig(json: object).unknown["project_names"], "chave conhecida não fica em `unknown`")
     }
 }
 

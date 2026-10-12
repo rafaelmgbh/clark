@@ -13,8 +13,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     private(set) var focusedPane: AgentPaneView?
     private(set) var zoomedPane: AgentPaneView?
     private(set) var layoutMode: String
-    /// Pasta do último projeto escolhido: é onde o ⌘N e o + AGENT abrem.
-    private(set) var defaultDirectory: String
     private(set) var fontScale: Double
     private(set) var launch: AgentLaunch?
     let warnings = WarningBarView()
@@ -46,6 +44,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     private var activationObserver: NSObjectProtocol?
     private var renamePopover: NSPopover?
     private weak var renameTarget: AgentPaneView?
+    /// O campo do popover está editando o apelido do projeto, não o nome do agente.
+    private var renamesProject = false
     private var saveFailureWarned = false
     private var lastTitle = ""
     private var lastBadge = -1
@@ -60,7 +60,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         self.clock = clock
         layoutMode = config.layout
         fontScale = config.fontScale
-        defaultDirectory = config.cwd.flatMap { PathTools.isDirectory($0) ? $0 : nil } ?? home
         theme = Theme.named(config.theme)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1360, height: 840),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -115,16 +114,23 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     // MARK: início e fim
 
     /// Chamado uma vez, quando o ambiente do shell já foi lido.
-    func start(launch: AgentLaunch, options: CLIOptions, startupWarnings: [String] = []) {
+    /// - Parameter openGlobalWhenEmpty: sem agente salvo nem pedido na linha de comando, abre um no `GLOBAL`.
+    func start(launch: AgentLaunch, options: CLIOptions, startupWarnings: [String] = [],
+               openGlobalWhenEmpty: Bool = true) {
         self.launch = launch
         startupWarnings.forEach(warnings.add)
         launch.resolver.warnings.forEach(warnings.add)
         if launch.claudePath == nil { warnings.add("claude nao encontrado: os agentes abrem o shell") }
+        // `clark PASTA` abre os agentes pedidos nela; sozinho, sem `-n`, é um agente na pasta.
+        // Se a pasta não existe, o agente pedido abre no GLOBAL, com o aviso.
+        var requested = options.count
+        var requestedDirectory = home
         if let directory = options.directory {
+            requested = max(1, requested)
             if PathTools.isDirectory(directory) {
-                defaultDirectory = directory
+                requestedDirectory = directory
             } else {
-                warnings.add("pasta nao encontrada: valendo a anterior")
+                warnings.add("pasta nao encontrada: abrindo no GLOBAL")
             }
         }
         emptyView.isLoading = false
@@ -133,7 +139,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         var created: [AgentPaneView] = []
         if !options.fresh {
             for saved in config.agents {
-                let directory = saved.cwd ?? defaultDirectory
+                let directory = saved.cwd ?? home
                 // A pasta sumiu (uma worktree apagada): o agente abre na home, e a conversa antiga,
                 // que é da outra pasta, não é retomada de lá.
                 let vanished = !PathTools.isDirectory(directory)
@@ -148,17 +154,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             }
             if panes.indices.contains(config.mainAgent) { mainPane = panes[config.mainAgent] }
         }
-        for _ in 0..<options.count {
+        // Nada salvo e nada pedido: o CLARK abre pronto para usar, com um agente no GLOBAL.
+        if requested == 0, panes.isEmpty, openGlobalWhenEmpty { requested = 1 }
+        for _ in 0..<requested {
             guard let pane = makePane(name: AgentNaming.automaticName(existing: panes.map(\.name)),
-                                      directory: defaultDirectory, sessionID: nil, tone: nil) else { break }
+                                      directory: requestedDirectory, sessionID: nil, tone: nil) else { break }
             created.append(pane)
             mainPane = pane
         }
         relayout()
         settleLayout()
-        created.forEach { $0.spawn() }
+        open(created)
         if let mainPane { focusTerminal(of: mainPane) }
         persist()
+    }
+
+    /// Abre os processos dos painéis novos e, em quem começa conversa nova num projeto, o resumo da
+    /// última sessão. As conversas dos agentes abertos ficam de fora: não são "a última".
+    private func open(_ created: [AgentPaneView]) {
+        created.forEach { $0.spawn() }
+        let running = Set(panes.map(\.sessionID))
+        created.forEach { $0.loadDigest(excluding: running) }
     }
 
     /// Quantos agentes ainda têm processo vivo.
@@ -182,7 +198,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         guard launch != nil else { return }
         config.layout = layoutMode
         config.fontScale = fontScale
-        config.cwd = defaultDirectory
         config.agents = panes.map {
             SavedAgent(name: $0.name, cwd: $0.directory, sessionID: $0.sessionID, tone: $0.tone)
         }
@@ -207,7 +222,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         let usedTones = panes.filter { $0.company.name == company.name }.map(\.tone)
         let pane = AgentPaneView(name: name, directory: directory, sessionID: sessionID ?? SessionLocator.newID(),
                                  tone: tone ?? AgentNaming.freeTone(used: usedTones), launch: launch,
-                                 appearance: terminalAppearance, clock: clock)
+                                 nicknames: config.projectNames, appearance: terminalAppearance, clock: clock)
         pane.delegate = self
         panes.append(pane)
         stage.addSubview(pane)
@@ -222,19 +237,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         return pane
     }
 
-    func addAgents(_ count: Int) {
+    /// Abre agentes novos. Sem pasta, abrem no `GLOBAL` (a home), fora de projeto.
+    func addAgents(_ count: Int, in directory: String? = nil) {
+        guard launch != nil else { return }
         var created: [AgentPaneView] = []
         for _ in 0..<max(0, count) {
             guard let pane = makePane(name: AgentNaming.automaticName(existing: panes.map(\.name)),
-                                      directory: defaultDirectory, sessionID: nil, tone: nil) else { break }
+                                      directory: directory ?? home, sessionID: nil, tone: nil) else { break }
             created.append(pane)
+        }
+        if created.count < count {
+            warnings.add("limite de \(ClarkConfig.maxAgents) agentes: feche um para abrir outro")
         }
         guard let last = created.last else { return }
         mainPane = last
         if zoomedPane != nil { zoomedPane = last }
         relayout()
         settleLayout()
-        created.forEach { $0.spawn() }
+        open(created)
         focusTerminal(of: last)
         persist()
     }
@@ -278,6 +298,23 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         persist()
     }
 
+    /// Dá, troca ou tira o apelido do projeto do agente. O apelido fica na pasta que dá o nome ao
+    /// projeto (o repositório), e vale para todo agente aberto nela. Texto vazio, ou igual ao nome da
+    /// pasta arrumado, tira o apelido.
+    func applyNickname(_ pane: AgentPaneView, text: String) {
+        guard let launch,
+              let path = launch.namedPath(forDirectory: pane.directory, nicknames: config.projectNames) else { return }
+        // A mesma pasta pode estar no arquivo escrita de outro jeito (com `~`, por um link).
+        var names = config.projectNames.filter { launch.canonical($0.key) != path }
+        let folder = PathTools.components(path).last.map(ProjectNaming.tidy)
+        if let nickname = ProjectNaming.sanitizedNickname(text), nickname != folder { names[path] = nickname }
+        guard names != config.projectNames else { return }
+        config.projectNames = names
+        panes.forEach { $0.updateProject(nicknames: names) }
+        refreshCards()
+        persist()
+    }
+
     // MARK: diff
 
     /// A janela do diff, mostrando o agente. Não a põe na tela.
@@ -303,13 +340,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         panes.forEach { $0.diff.refresh() }
     }
 
-    func setDefaultDirectory(_ directory: String) {
-        guard PathTools.isDirectory(directory) else { return }
-        defaultDirectory = directory
-        updateButtonTitles()
-        persist()
-    }
-
     func setFontScale(_ scale: Double) {
         let range = ClarkConfig.fontScaleRange
         let clamped = (min(range.upperBound, max(range.lowerBound, scale)) * 100).rounded() / 100
@@ -324,25 +354,31 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     // MARK: projetos
 
-    /// Menu do botão PROJETO, relido do disco a cada abertura: GLOBAL, as empresas e a escolha de outra pasta.
+    static let companyFolderTitle = "Pasta da empresa"
+    static let otherFoldersTitle = "Outras pastas"
+    static let otherFolderTitle = "Outra pasta…"
+
+    /// Menu do botão PROJETO, relido do disco a cada abertura: o `GLOBAL`, uma empresa por linha com
+    /// os projetos dela a um clique, as pastas apelidadas fora de toda empresa e a escolha de outra pasta.
     func projectMenu() -> NSMenu {
         let menu = NSMenu(title: "Projeto")
-        menu.addItem(projectItem("GLOBAL", path: home))
-        menu.addItem(.separator())
-        let groups = launch?.projectGroups() ?? []
-        for group in groups {
-            // Empresa de uma pasta só, sem nada dentro, abre direto.
-            if group.projects.isEmpty, group.folders.count == 1 {
-                menu.addItem(projectItem(group.name, path: group.folders[0]))
-            } else {
-                menu.addItem(projectSubmenu(group.name, folders: group.folders, entries: group.projects))
-            }
-        }
-        if !groups.isEmpty { menu.addItem(.separator()) }
-        let other = NSMenuItem(title: "Outra pasta…", action: #selector(chooseFolder(_:)), keyEquivalent: "")
+        var blocks: [[NSMenuItem]] = [[projectItem(ProjectNaming.global, path: home)]]
+        let groups = launch?.projectGroups(nicknames: config.projectNames) ?? []
+        blocks.append(groups.filter { !$0.folders.isEmpty }.map(companyItem))
+        blocks.append(groups.filter { $0.folders.isEmpty }.flatMap(\.nicknamed).map(projectItem))
+        let other = NSMenuItem(title: Self.otherFolderTitle, action: #selector(chooseFolder(_:)), keyEquivalent: "")
         other.target = self
-        menu.addItem(other)
+        blocks.append([other])
+        Self.fill(menu, with: blocks)
         return menu
+    }
+
+    /// Os blocos que têm item, com um separador entre eles.
+    private static func fill(_ menu: NSMenu, with blocks: [[NSMenuItem]]) {
+        for block in blocks where !block.isEmpty {
+            if !menu.items.isEmpty { menu.addItem(.separator()) }
+            block.forEach(menu.addItem)
+        }
     }
 
     private func projectItem(_ title: String, path: String) -> NSMenuItem {
@@ -353,29 +389,53 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         return item
     }
 
-    /// Submenu de uma empresa ou de uma pasta de repositórios: as próprias pastas em cima, o que há dentro embaixo.
-    private func projectSubmenu(_ title: String, folders: [String], entries: [ProjectEntry]) -> NSMenuItem {
-        let submenu = NSMenu(title: title)
-        for folder in folders { submenu.addItem(projectItem(PathTools.short(folder, home: home), path: folder)) }
-        if !entries.isEmpty { submenu.addItem(.separator()) }
-        for entry in entries {
-            submenu.addItem(entry.children.isEmpty ? projectItem(entry.name, path: entry.path)
-                : projectSubmenu(entry.name, folders: [entry.path], entries: entry.children))
+    private func projectItem(_ entry: ProjectEntry) -> NSMenuItem {
+        projectItem(entry.name, path: entry.path)
+    }
+
+    /// Linha de uma empresa. O submenu traz, de cima para baixo: os projetos apelidados, os do
+    /// primeiro nível, os mais fundos sob o nome da pasta em que estão, as pastas que não são projeto
+    /// e a pasta da própria empresa.
+    private func companyItem(_ group: ProjectGroup) -> NSMenuItem {
+        // Empresa de uma pasta só, sem nada dentro para escolher, abre direto.
+        if group.isBare, group.folders.count == 1 { return projectItem(group.name, path: group.folders[0]) }
+        let submenu = NSMenu(title: group.name)
+        var projects = group.projects.map(projectItem)
+        for section in group.sections {
+            projects.append(.sectionHeader(title: section.title))
+            for entry in section.projects {
+                let item = projectItem(entry)
+                item.indentationLevel = 1
+                projects.append(item)
+            }
         }
-        let holder = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        var folders: [NSMenuItem] = []
+        if !group.others.isEmpty {
+            let others = NSMenu(title: Self.otherFoldersTitle)
+            group.others.map(projectItem).forEach(others.addItem)
+            let holder = NSMenuItem(title: Self.otherFoldersTitle, action: nil, keyEquivalent: "")
+            holder.submenu = others
+            folders.append(holder)
+        }
+        if group.folders.count == 1 {
+            folders.append(projectItem(Self.companyFolderTitle, path: group.folders[0]))
+        } else {
+            folders += group.folders.map { projectItem(PathTools.short($0, home: home), path: $0) }
+        }
+        Self.fill(submenu, with: [group.nicknamed.map(projectItem), projects, folders])
+        let holder = NSMenuItem(title: group.name, action: nil, keyEquivalent: "")
         holder.submenu = submenu
         return holder
     }
 
-    /// Abre um agente na pasta, que passa a ser a do ⌘N e do + AGENT.
+    /// Abre um agente na pasta do projeto. O ⌘N e o + AGENT continuam abrindo no `GLOBAL`.
     func openAgent(in directory: String) {
         guard launch != nil else { return }
         guard PathTools.isDirectory(directory) else {
-            warnings.add("pasta nao encontrada: valendo a anterior")
+            warnings.add("pasta nao encontrada: nada foi aberto")
             return
         }
-        setDefaultDirectory(directory)
-        addAgents(1)
+        addAgents(1, in: directory)
     }
 
     /// Agente sobre o qual os atalhos agem.
@@ -504,7 +564,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     private func updateButtonTitles() {
-        topBar.projectButton.title = TopBarView.projectTitle(shortPath: PathTools.short(defaultDirectory, home: home))
         topBar.layoutButton.title = layoutMode == "focus" ? "FOCO" : "GRADE"
         topBar.needsLayout = true
         topBar.needsDisplay = true
@@ -548,8 +607,23 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     func paneRequestsZoom(_ pane: AgentPaneView) { toggleZoom(of: pane) }
     func paneRequestsClose(_ pane: AgentPaneView) { close(pane) }
 
+    func paneRequestsSibling(_ pane: AgentPaneView) { addAgents(1, in: pane.directory) }
+
     func paneRequestsRename(_ pane: AgentPaneView) {
-        let field = NSTextField(string: pane.name)
+        presentNameField(for: pane, text: pane.name, placeholder: "Nome do agente", project: false)
+    }
+
+    func paneRequestsNickname(_ pane: AgentPaneView) {
+        guard !pane.isGlobal else { return }
+        presentNameField(for: pane, text: pane.project, placeholder: "Apelido (vazio: o nome da pasta)",
+                         project: true)
+    }
+
+    /// Campo de texto num popover sob o cabeçalho do agente: o nome dele ou o apelido do projeto.
+    private func presentNameField(for pane: AgentPaneView, text: String, placeholder: String, project: Bool) {
+        renamePopover?.close()
+        let field = NSTextField(string: text)
+        field.placeholderString = placeholder
         field.frame = NSRect(x: 10, y: 10, width: 240, height: 24)
         field.font = .monospacedSystemFont(ofSize: 13, weight: .bold)
         field.target = self
@@ -564,6 +638,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         popover.contentViewController = content
         renamePopover = popover
         renameTarget = pane
+        renamesProject = project
         popover.show(relativeTo: pane.header.bounds, of: pane.header, preferredEdge: .maxY)
         field.selectText(nil)
     }
@@ -572,7 +647,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         renamePopover?.close()
         renamePopover = nil
         guard let pane = renameTarget else { return }
-        applyRename(pane, text: sender.stringValue)
+        if renamesProject {
+            applyNickname(pane, text: sender.stringValue)
+        } else {
+            applyRename(pane, text: sender.stringValue)
+        }
         focusTerminal(of: pane)
     }
 
@@ -591,6 +670,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     // MARK: menu
 
     @objc func newAgent(_ sender: Any?) { addAgents(1) }
+
+    /// Mais um agente na pasta do agente atual.
+    @objc func newSiblingAgent(_ sender: Any?) {
+        if let pane = currentPane { paneRequestsSibling(pane) }
+    }
 
     @objc func closeAgent(_ sender: Any?) {
         if let pane = currentPane {
@@ -642,7 +726,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.directoryURL = URL(fileURLWithPath: defaultDirectory)
+        panel.directoryURL = URL(fileURLWithPath: currentPane?.directory ?? home)
         panel.prompt = "Escolher"
         panel.message = "Pasta onde o agente abre"
         panel.beginSheetModal(for: window) { [weak self] response in
@@ -682,6 +766,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         if let pane = currentPane { paneRequestsRename(pane) }
     }
 
+    @objc func nicknameProject(_ sender: Any?) {
+        if let pane = currentPane { paneRequestsNickname(pane) }
+    }
+
     @objc func showDiff(_ sender: Any?) {
         if let pane = currentPane { presentDiff(of: pane) }
     }
@@ -696,6 +784,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         switch menuItem.action {
         case #selector(newAgent(_:)):
             return launch != nil && panes.count < ClarkConfig.maxAgents
+        case #selector(newSiblingAgent(_:)):
+            return !panes.isEmpty && panes.count < ClarkConfig.maxAgents
+        case #selector(nicknameProject(_:)):
+            return currentPane.map { !$0.isGlobal } ?? false
         case #selector(chooseProject(_:)), #selector(openProject(_:)), #selector(chooseFolder(_:)):
             return launch != nil
         case #selector(closeAllAgents(_:)), #selector(toggleZoom(_:)), #selector(renameAgent(_:)),

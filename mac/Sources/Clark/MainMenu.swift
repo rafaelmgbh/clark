@@ -14,6 +14,8 @@ enum MainMenu {
         ]))
         main.addItem(submenu("Arquivo", [
             item("Novo agente", #selector(MainWindowController.newAgent(_:)), "n"),
+            // `N` maiúsculo: o atalho é ⌘⇧N.
+            item("Novo agente nesta pasta", #selector(MainWindowController.newSiblingAgent(_:)), "N"),
             item("Abrir projeto…", #selector(MainWindowController.chooseProject(_:)), "d"),
             .separator(),
             item("Fechar agente", #selector(MainWindowController.closeAgent(_:)), "w"),
@@ -41,6 +43,7 @@ enum MainMenu {
             item("Agente anterior", #selector(MainWindowController.previousAgent(_:)), "{"),
             item("Próximo agente", #selector(MainWindowController.nextAgent(_:)), "}"),
             item("Renomear…", #selector(MainWindowController.renameAgent(_:)), ""),
+            item("Apelidar projeto…", #selector(MainWindowController.nicknameProject(_:)), ""),
             .separator(),
             // `D` maiúsculo: o atalho é ⌘⇧D. O ⌘D é o do projeto.
             item("Ver diff", #selector(MainWindowController.showDiff(_:)), "D"),

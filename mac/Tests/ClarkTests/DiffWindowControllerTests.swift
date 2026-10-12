@@ -40,8 +40,7 @@ final class DiffWindowControllerTests: XCTestCase {
     }
 
     private func agent(in directory: String, of controller: MainWindowController) -> AgentPaneView {
-        controller.setDefaultDirectory(directory)
-        controller.addAgents(1)
+        controller.addAgents(1, in: directory)
         return controller.panes[controller.panes.count - 1]
     }
 
@@ -241,7 +240,8 @@ final class DiffWindowControllerTests: XCTestCase {
         let first = agent(in: repo.path, of: controller)
         _ = agent(in: repo.path, of: controller)
         let menu = first.contextMenu()
-        XCTAssertEqual(menu.items.prefix(4).map(\.title), ["Renomear…", "Zoom", "Ver diff", "Fechar"])
+        XCTAssertEqual(menu.items.prefix(6).map(\.title),
+                       ["Renomear…", "Apelidar projeto…", "Zoom", "Ver diff", "Novo agente nesta pasta", "Fechar"])
         let item = try XCTUnwrap(menu.items.first { $0.title == "Ver diff" })
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item))
         XCTAssertEqual(shown().count, 1)
