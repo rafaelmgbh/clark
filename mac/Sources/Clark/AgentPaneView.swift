@@ -144,8 +144,8 @@ final class AgentPaneView: PixelView {
 
     var snapshot: AgentSnapshot {
         AgentSnapshot(name: name, project: project, company: isGlobal ? "" : company.name, color: color,
-                      path: PathTools.short(directory, home: launch.home), state: machine.state, preview: preview,
-                      diff: diff.summary, remoteControl: remoteControl)
+                      companyColor: company.color, path: PathTools.short(directory, home: launch.home),
+                      state: machine.state, preview: preview, diff: diff.summary, remoteControl: remoteControl)
     }
 
     /// - Parameter nicknames: caminho -> apelido, como está no `config.json`.
@@ -163,8 +163,8 @@ final class AgentPaneView: PixelView {
         company = launch.company(forDirectory: directory)
         machine = AgentStateMachine(now: clock())
         terminal = AgentTerminalView(frame: NSRect(x: 0, y: 0, width: 640, height: 400))
-        header = AgentHeaderView(snapshot: AgentSnapshot(name: name, company: "", color: .black, path: "",
-                                                         state: .boot))
+        header = AgentHeaderView(snapshot: AgentSnapshot(name: name, company: "", color: .black,
+                                                         companyColor: .black, path: "", state: .boot))
         super.init(frame: NSRect(x: 0, y: 0, width: 660, height: 450))
         theme = appearance.theme
         header.theme = appearance.theme

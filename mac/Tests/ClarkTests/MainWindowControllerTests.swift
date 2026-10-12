@@ -639,7 +639,7 @@ final class MainWindowControllerTests: XCTestCase {
         let pane = controller.panes[0]
         XCTAssertTrue(waitUntil { self.lines(pane).contains("FIM") })
         XCTAssertEqual(pane.company.name, CompanyResolver.fallbackName)
-        XCTAssertEqual(Array(lines(pane)[1...4]), ["EMPRESA=AVULSO", "A=vazio", "B=vazio", "GH=liberado-para-todos"])
+        XCTAssertEqual(Array(lines(pane)[1...4]), ["EMPRESA=GLOBAL", "A=vazio", "B=vazio", "GH=liberado-para-todos"])
         XCTAssertEqual(pane.removedVariables, ["ACME_API_KEY"])
     }
 
@@ -652,6 +652,10 @@ final class MainWindowControllerTests: XCTestCase {
         XCTAssertEqual(controller.panes.map(\.company.name), ["acme", "acme", "beta"])
         XCTAssertEqual(controller.panes.map(\.tone), [0, 1, 0])
         XCTAssertNotEqual(controller.panes[0].color, controller.panes[1].color)
+        // O tom distingue os agentes no card. A etiqueta da empresa no cabeçalho é igual nos dois.
+        XCTAssertEqual(controller.panes.map(\.snapshot.color), controller.panes.map(\.color))
+        XCTAssertEqual(controller.panes.map(\.snapshot.companyColor), controller.panes.map(\.company.color))
+        XCTAssertEqual(controller.panes[0].snapshot.companyColor, controller.panes[1].snapshot.companyColor)
     }
 
     func testSavedConversationIsResumed() {

@@ -57,9 +57,14 @@ Com o CLARK já aberto, `clark` só traz a janela para a frente: as opções sã
 ### Projetos
 
 Todo agente trabalha numa pasta, e o `claude` dele roda dentro dela: é dali que saem o `CLAUDE.md`,
-o `AGENTS.md`, o `.claude/` e os arquivos que o agente lê. O cabeçalho e o card mostram o projeto
-ao lado do nome do agente, na cor da empresa, e a empresa em cinza:
-`AGENT 2  PORTAL DE COMPRAS  ACME`.
+o `AGENTS.md`, o `.claude/` e os arquivos que o agente lê.
+
+O cabeçalho do agente diz de quem ele é em três etiquetas, nesta ordem: a empresa, na cor dela; o
+projeto; e o nome do agente: `ACME` `PORTAL DE COMPRAS` `AGENT 2`. O agente fora de toda empresa
+leva `GLOBAL` no lugar dela, e o projeto com o mesmo nome da empresa não se repete. Quando falta
+largura, a empresa vira um quadrado da cor dela, depois o projeto é cortado e sai, e só no fim o
+nome do agente é cortado, pelo começo: o fim é o que distingue `AGENT 1` de `AGENT 2`. O card da
+lista lateral traz o nome, o projeto numa linha própria, na cor da empresa, e a empresa em cinza.
 
 O CLARK começa no `GLOBAL`: um agente na home, para o que não é de projeto nenhum. O ⌘N e o
 `+ AGENT` também abrem no `GLOBAL`. Para trabalhar num projeto, use o botão `PROJETO` da barra (⌘D):
@@ -187,7 +192,8 @@ etiqueta deixa de aparecer e nada mais muda.
 ## Empresas
 
 Sem configuração, a primeira pasta abaixo de `~/Projetos` é a empresa do agente:
-um agente em `~/Projetos/acme/api` é da empresa `acme`. Fora dali, a empresa é `AVULSO`.
+um agente em `~/Projetos/acme/api` é da empresa `acme`. Fora dali o agente não é de empresa
+nenhuma: o cabeçalho mostra `GLOBAL`, e é esse o valor de `CLARK_COMPANY`.
 
 Para mudar isso, crie `~/.config/clark/companies.json`. O CLARK lê o arquivo ao abrir e nunca
 escreve nele.
@@ -211,11 +217,13 @@ escreve nele.
 - `companies`: empresas declaradas. Entre dois `paths` que servem, vale o mais comprido. Um `path`
   declarado vale mais que a detecção automática: se ele for uma das `roots` ou uma pasta acima
   dela, essa empresa engole todas as outras dali, e o CLARK avisa na barra.
-- `color`: cor da empresa. Sem ela, a cor sai do nome, e duas empresas podem cair na mesma;
-  nesse caso declare as duas com `color`.
+- `color`: cor da empresa, a da etiqueta dela no cabeçalho. Só vale em empresa declarada com
+  `paths`. Sem ela, a cor sai do nome, e duas empresas podem cair na mesma; nesse caso declare as
+  duas com `color`.
 - `env_allow`: veja a seção seguinte.
 
-Agentes da mesma empresa ganham tons mais escuros da mesma cor.
+No card, agentes da mesma empresa ganham tons mais escuros da mesma cor. A etiqueta do cabeçalho
+fica sempre na cor da empresa.
 
 ## Ambiente dos agentes
 

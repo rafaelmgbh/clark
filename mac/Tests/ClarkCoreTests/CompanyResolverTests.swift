@@ -22,7 +22,9 @@ final class CompanyResolverTests: XCTestCase {
         XCTAssertTrue(resolver.globalEnvAllow.isEmpty)
     }
 
-    func testOutsideTheRootsIsAvulso() {
+    func testOutsideTheRootsIsGlobal() {
+        XCTAssertEqual(CompanyResolver.fallbackName, "GLOBAL", "o mesmo nome do projeto da home")
+        XCTAssertEqual(CompanyResolver.fallbackName, ProjectNaming.global)
         let resolver = resolver(nil)
         for path in ["/Users/eu/Projetos", "/Users/eu/Documents/x", "/", "/Users/eu/ProjetosX/y"] {
             let company = resolver.resolve(canonicalPath: path)

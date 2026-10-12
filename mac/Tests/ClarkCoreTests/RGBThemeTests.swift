@@ -20,6 +20,19 @@ final class RGBThemeTests: XCTestCase {
         XCTAssertEqual(RGB.white.darkened(0.5).hex, "#808080")
     }
 
+    func testContrastGoesFromOneToTwentyOne() {
+        XCTAssertEqual(RGB.black.luminance, 0)
+        XCTAssertEqual(RGB.white.luminance, 1, accuracy: 0.0001)
+        XCTAssertEqual(RGB.white.contrast(.black), 21, accuracy: 0.001)
+        XCTAssertEqual(RGB.black.contrast(.white), 21, accuracy: 0.001, "a ordem não importa")
+        let gray = RGB(hex: "#777777")!
+        XCTAssertEqual(gray.contrast(gray), 1)
+        XCTAssertEqual(gray.contrast(.white), 4.48, accuracy: 0.01)
+        // O verde pesa mais que o vermelho, e o azul quase nada.
+        XCTAssertGreaterThan(RGB(r: 0, g: 1, b: 0).luminance, RGB(r: 1, g: 0, b: 0).luminance)
+        XCTAssertGreaterThan(RGB(r: 1, g: 0, b: 0).luminance, RGB(r: 0, g: 0, b: 1).luminance)
+    }
+
     func testDarkThemeMatchesTheOriginalPalette() {
         let theme = Theme.dark
         XCTAssertEqual(theme.bg.hex, "#14100e")

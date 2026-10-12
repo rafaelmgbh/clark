@@ -4,7 +4,7 @@ import XCTest
 @testable import Clark
 
 /// Desenho de uma `PixelView` num bitmap próprio, com a origem em cima à esquerda.
-struct RenderedImage {
+struct RenderedImage: Equatable {
     let width: Int
     let height: Int
     private let bytes: [UInt8]

@@ -120,8 +120,9 @@ a compilação com o diff: em 2026-10-11 o executável instalado era idêntico a
   ⌘⇧D. Esperado: mesma posição e mesmo tamanho. Repita depois de ⌘Q e de abrir o CLARK de novo.
 
 - [ ] **A14. Cabeçalho apertado.** Abra agentes até a grade (⌘L) ficar com cabeçalhos estreitos, ou
-  estreite a janela principal. Esperado: quando falta espaço, o nome da empresa fica e o resumo do
-  diff some; nada se sobrepõe.
+  estreite a janela principal. Esperado: quando falta espaço, some primeiro o resumo do diff; depois
+  a etiqueta da empresa vira um quadrado da cor dela, o projeto é cortado e sai, e o nome do agente
+  é o último a ser cortado, pelo começo (`…NT 2`); nada se sobrepõe.
 
 - [ ] **A15. Diff comprido e arquivo binário.** No Terminal:
 
@@ -195,7 +196,8 @@ cd /tmp/clark-diff && git checkout -q -- b.txt && rm -f longo.txt bin.dat teste.
 ## B. Projetos, apelidos, última sessão e ícone
 
 - [ ] **B1. Começa no `GLOBAL`.** Feche todos os agentes, saia (⌘Q) e abra o CLARK. Esperado: um
-  agente na home, com `GLOBAL` ao lado do nome, sem empresa. `! pwd` mostra a home.
+  agente na home, com duas etiquetas no cabeçalho, `GLOBAL` em cinza e `AGENT 1`. `! pwd` mostra a
+  home.
 
 - [ ] **B2. Clique no botão `PROJETO`.** Clique no botão da barra, sem usar o ⌘D. Esperado: o menu
   abre logo abaixo dele, sem demora, com `GLOBAL`, as empresas e `Outra pasta…`. O título do botão
@@ -218,7 +220,8 @@ cd /tmp/clark-diff && git checkout -q -- b.txt && rm -f longo.txt bin.dat teste.
   mostra o branch dela.
 
 - [ ] **B4. Abrir num projeto.** Escolha um projeto. Esperado: abre um agente novo naquela pasta, com
-  o projeto grande na cor da empresa e a empresa em cinza: `AGENT 2  MEU PROJETO  EMPRESA`. O card da
+  três etiquetas no cabeçalho, nesta ordem: a empresa na cor dela, o projeto e o nome do agente
+  (`EMPRESA` `MEU PROJETO` `AGENT 2`), com a cara dos botões `PROJETO` e `FOCO`. O card da
   lista lateral traz o projeto numa linha própria. Rode `! pwd` para conferir a pasta.
 
 - [ ] **B5. O `claude` enxerga o projeto.** No agente aberto no B4, rode `/memory`. Esperado: o
@@ -328,8 +331,8 @@ Estes passos pedem o [AiUsageBar](https://github.com/rafaelmgbh/ai-usage-bar) ro
 - [ ] **D10. REMOTO enquanto trabalha e no aperto.** Com o controle remoto ligado, mande do celular
   ou de claude.ai/code um pedido demorado. Esperado: a etiqueta continua durante o `WORKING`.
   Passe para a grade com vários agentes, ou estreite a janela aos poucos. Esperado: no cabeçalho
-  some primeiro o resumo do diff e só depois a etiqueta; o nome e o projeto não encolhem por
-  causa dela.
+  some primeiro o resumo do diff e só depois a etiqueta; as etiquetas da empresa, do projeto e do
+  nome não encolhem por causa dela.
 
 - [ ] **D11. REMOTO e GAME OVER.** Com o controle remoto ligado, saia do Claude (`/exit`).
   Esperado: `GAME OVER` sem a etiqueta. Enter reabre a conversa, e a etiqueta só volta se o
@@ -382,6 +385,10 @@ E no que veio depois, também sem consulta:
   coluna pede 320 pontos de terminal; o menu do cabeçalho tem `Arquivos alterados`; arquivo da raiz
   fica numa linha mais baixa, sem a pasta; a coluna não é lembrada ao reabrir o app.
 
+- No cabeçalho: empresa, projeto e nome do agente como etiquetas, nessa ordem; só a da empresa
+  leva cor, a mesma em todos os agentes dela (o tom por agente fica no card); fora de empresa a
+  palavra é `GLOBAL`, que substituiu `AVULSO` também em `CLARK_COMPANY`; o quadrado colorido saiu;
+  as etiquetas não clicam.
 - No aviso de controle remoto: a palavra `REMOTO` em azul, no cabeçalho e no card; sem clique e
   sem o endereço da sessão; no cabeçalho apertado o resumo do diff sai antes dela.
 

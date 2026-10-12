@@ -47,6 +47,20 @@ public struct RGB: Equatable, Hashable, Sendable {
         mix(.black, t)
     }
 
+    /// Luminância relativa (WCAG): 0 no preto, 1 no branco.
+    public var luminance: Double {
+        func linear(_ value: Double) -> Double {
+            value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+    }
+
+    /// Contraste entre as duas cores (WCAG): de 1, iguais, a 21, preto no branco.
+    public func contrast(_ other: RGB) -> Double {
+        let high = max(luminance, other.luminance), low = min(luminance, other.luminance)
+        return (high + 0.05) / (low + 0.05)
+    }
+
     public var hex: String {
         func byte(_ value: Double) -> Int { Int((min(1, max(0, value)) * 255).rounded()) }
         return String(format: "#%02x%02x%02x", byte(r), byte(g), byte(b))

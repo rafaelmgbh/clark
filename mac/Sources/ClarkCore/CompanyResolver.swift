@@ -16,10 +16,11 @@ public struct Company: Equatable, Sendable {
 /// Caminho -> empresa, a partir do `companies.json` (opcional).
 /// 1. `paths` explícitos, vencendo o prefixo mais longo;
 /// 2. primeira pasta abaixo de uma das `roots`;
-/// 3. `AVULSO`.
+/// 3. `GLOBAL`.
 /// Só o passo 1 dá `env_allow`: uma empresa detectada pela pasta nunca libera variável.
 public struct CompanyResolver: Sendable {
-    public static let fallbackName = "AVULSO"
+    /// Quem não é de empresa nenhuma é do `GLOBAL`, o mesmo nome do projeto da home.
+    public static let fallbackName = ProjectNaming.global
     public static let defaultRoots = ["~/Projetos"]
     /// Agentes da mesma empresa escurecem nestes passos: 0, 15, 30 e 45%.
     public static let toneStep = 0.15

@@ -9,11 +9,14 @@ final class PixelViewsTests: XCTestCase {
     /// Cor que não existe no tema: o que aparecer nela veio do agente.
     private let magenta = RGB(r: 1, g: 0, b: 1)
 
+    /// - Parameter tone: a cor do agente, quando o teste precisa dela diferente da cor da empresa.
     private func snapshot(_ state: AgentState = .idle, name: String = "AGENT 1", project: String = "PORTAL",
                           company: String = "ACME", path: String = "~/Projetos/acme", preview: [String] = [],
-                          diff: DiffSummary? = nil, remoteControl: Bool = false) -> AgentSnapshot {
-        AgentSnapshot(name: name, project: project, company: company, color: magenta, path: path, state: state,
-                      preview: preview, diff: diff, remoteControl: remoteControl)
+                          diff: DiffSummary? = nil, remoteControl: Bool = false,
+                          tone: RGB? = nil) -> AgentSnapshot {
+        AgentSnapshot(name: name, project: project, company: company, color: tone ?? magenta,
+                      companyColor: magenta, path: path, state: state, preview: preview, diff: diff,
+                      remoteControl: remoteControl)
     }
 
     /// A etiqueta `REMOTO` inteira, com o canto em (x, y): fundo azul e as letras na cor do fundo da janela.
@@ -132,9 +135,8 @@ final class PixelViewsTests: XCTestCase {
         let image = RenderedImage(header, width: 600, height: AgentHeaderView.height)
         let pill = pillOrigin(width: 600)
         XCTAssertTrue(image.isColor(theme.bg2, atX: 1, y: 1))
-        XCTAssertTrue(image.isColor(magenta, atX: 15, y: 15), "quadrado na cor do agente")
+        XCTAssertTrue(image.isColor(magenta, atX: 11, y: 8), "etiqueta da empresa na cor do agente")
         XCTAssertTrue(image.isColor(theme.green, atX: pill.x, y: pill.y), "moldura da pílula em WORKING")
-        XCTAssertGreaterThan(image.count(theme.ink, x: 30, y: 8, width: 200, height: 14), 0, "nome")
 
         header.snapshot = snapshot(.exited)
         let exited = RenderedImage(header, width: 600, height: AgentHeaderView.height)
@@ -161,7 +163,9 @@ final class PixelViewsTests: XCTestCase {
         let header = AgentHeaderView(snapshot: snapshot(.idle, diff: DiffSummary(files: 4, added: 12, removed: 3)))
         let image = RenderedImage(header, width: 240, height: AgentHeaderView.height)
         XCTAssertEqual(image.count(theme.green) + image.count(theme.red), 0)
-        XCTAssertGreaterThan(image.count(theme.ink, x: 30, y: 8, width: 100, height: 14), 0, "nome")
+        let agent = header.tags(width: 240).last
+        XCTAssertEqual(agent?.kind, .agent)
+        XCTAssertEqual(agent?.width, tagWidth("AGENT 1", compact: true), "o nome do agente fica inteiro")
     }
 
     func testHeaderDonePillBlinks() {
@@ -177,73 +181,241 @@ final class PixelViewsTests: XCTestCase {
         XCTAssertFalse(hollow.isColor(theme.yellow, atX: pill.x + 3, y: pill.y + 3))
     }
 
-    /// Onde o cabeçalho põe o projeto e a empresa, com o nome e o projeto na escala 2.
-    private func headerColumns(name: String = "AGENT 1", project: String) -> (project: Int, company: Int) {
-        let projectX = 30 + PixelFont.textWidth(name, scale: 2) + 14
-        return (projectX, projectX + PixelFont.textWidth(project, scale: 2) + 12)
+    // MARK: etiquetas do cabeçalho
+
+    private func tagWidth(_ text: String, compact: Bool = false) -> Int {
+        NameTag.width(text, compact: compact)
     }
 
-    func testHeaderShowsTheProjectInTheAgentColorAndTheCompanyInGray() {
-        let columns = headerColumns(project: "PORTAL")
-        let pill = pillOrigin(width: 600)
-        let image = RenderedImage(AgentHeaderView(snapshot: snapshot(path: "")), width: 600,
-                                  height: AgentHeaderView.height)
-        XCTAssertGreaterThan(image.count(magenta, x: columns.project, y: 8,
-                                         width: PixelFont.textWidth("PORTAL", scale: 2), height: 14), 0,
-                             "projeto grande, na cor do agente")
-        XCTAssertEqual(image.count(magenta, x: columns.company), 0, "depois do projeto nada leva a cor do agente")
-        XCTAssertGreaterThan(image.count(theme.dim, x: columns.company, y: 11,
-                                         width: PixelFont.textWidth("ACME", scale: 1), height: 7), 0,
-                             "empresa pequena e apagada")
-
-        let global = RenderedImage(AgentHeaderView(snapshot: snapshot(project: "GLOBAL", company: "", path: "")),
-                                   width: 600, height: AgentHeaderView.height)
-        let globalColumns = headerColumns(project: "GLOBAL")
-        XCTAssertGreaterThan(global.count(magenta, x: globalColumns.project), 0)
-        XCTAssertEqual(global.count(theme.dim, x: globalColumns.company, width: pill.x - globalColumns.company), 0,
-                       "o GLOBAL não é de empresa nenhuma")
+    /// Até onde as etiquetas podem ir: a pílula do estado, com a folga dela.
+    private func tagLimit(width: Int) -> Int {
+        let scale = width < AgentHeaderView.compactWidth ? 1 : 2
+        return width - (PixelFont.textWidth("WORKING...", scale: scale) + 16) - 6 - 10
     }
 
-    func testHeaderDoesNotRepeatTheCompanyNamedLikeTheProject() {
-        let columns = headerColumns(project: "ACME")
-        let image = RenderedImage(AgentHeaderView(snapshot: snapshot(project: "Acme", company: "ACME", path: "")),
-                                  width: 600, height: AgentHeaderView.height)
-        XCTAssertGreaterThan(image.count(magenta, x: columns.project), 0)
-        XCTAssertEqual(image.count(theme.dim, x: columns.company, width: pillOrigin(width: 600).x - columns.company), 0)
+    /// Uma etiqueta no desenho dos botões da barra: moldura, face e sombra dura embaixo à direita.
+    private func assertTag(in image: RenderedImage, _ tag: AgentHeaderView.Tag, face: RGB,
+                           file: StaticString = #filePath, line: UInt = #line) {
+        let x = tag.x, y = 5, right = tag.x + tag.width, bottom = y + NameTag.height
+        for corner in [(x, y), (right - 1, bottom - 1), (x, y + 10), (right - 1, y + 10)] {
+            XCTAssertTrue(image.isColor(theme.shadow, atX: corner.0, y: corner.1), "moldura em \(corner)",
+                          file: file, line: line)
+        }
+        XCTAssertTrue(image.isColor(face, atX: x + 2, y: y + 2), "face", file: file, line: line)
+        XCTAssertTrue(image.isColor(face, atX: right - 3, y: bottom - 3), "face", file: file, line: line)
+        XCTAssertTrue(image.isColor(theme.shadow, atX: right + 2, y: bottom + 2), "sombra dura", file: file,
+                      line: line)
+        XCTAssertTrue(image.isColor(theme.bg2, atX: right + 3, y: bottom + 2), "a sombra tem 3 pontos",
+                      file: file, line: line)
+        XCTAssertTrue(image.isColor(theme.bg2, atX: right, y: y + 2), "a sombra começa 3 pontos abaixo",
+                      file: file, line: line)
+        XCTAssertTrue(image.isColor(theme.bg2, atX: x - 1, y: y + 10), "folga antes da etiqueta", file: file,
+                      line: line)
     }
 
-    func testTightHeaderShrinksTheProjectBeforeTouchingTheName() {
-        // 480 px: o nome e o projeto na escala 2 não cabem até a pílula.
-        let snapshot = snapshot(name: "REVISOR DE PR", project: "Portal de Compras", path: "")
-        let image = RenderedImage(AgentHeaderView(snapshot: snapshot), width: 480, height: AgentHeaderView.height)
-        let nameWidth = PixelFont.textWidth("REVISOR DE PR", scale: 2)
-        let projectX = 30 + nameWidth + 14
-        let projectWidth = PixelFont.textWidth("PORTAL DE COMPRAS", scale: 1)
-        XCTAssertGreaterThan(image.count(theme.ink, x: 30 + nameWidth - 10, y: 8, width: 10, height: 14), 0,
-                             "o nome fica inteiro e grande")
-        XCTAssertGreaterThan(image.count(magenta, x: projectX + projectWidth - 5, y: 11, width: 5, height: 7), 0,
-                             "o projeto fica inteiro, na escala 1")
-        XCTAssertEqual(image.count(magenta, x: projectX, y: 0, width: 480, height: 11), 0)
+    func testTagWidthFollowsTheTextInTheButtonFont() {
+        XCTAssertEqual(tagWidth("ACME"), Pixel.monoWidth("ACME", size: 11, bold: true) + 18)
+        XCTAssertEqual(tagWidth("ACME", compact: true), Pixel.monoWidth("ACME", size: 10, bold: true) + 12)
+        XCTAssertEqual(tagWidth(""), NameTag.height, "sem texto, o quadrado da cor")
+        XCTAssertEqual(tagWidth("", compact: true), NameTag.height)
     }
 
-    func testNarrowHeaderShrinksTheNameInsteadOfCuttingIt() {
-        // 240 px, grade cheia: cortados, `AGENT 1` e `AGENT 2` virariam o mesmo `AGE...`.
-        let image = RenderedImage(AgentHeaderView(snapshot: snapshot(path: "")), width: 240,
-                                  height: AgentHeaderView.height)
-        let nameWidth = PixelFont.textWidth("AGENT 1", scale: 1)
-        XCTAssertGreaterThan(image.count(theme.ink, x: 30 + nameWidth - 5, y: 11, width: 5, height: 7), 0,
-                             "o número do agente continua lá")
-        XCTAssertEqual(image.count(theme.ink, x: 30 + nameWidth), 0, "nome na escala 1")
-        XCTAssertGreaterThan(image.count(magenta, x: 30 + nameWidth + 14, y: 11,
-                                         width: PixelFont.textWidth("PORTAL", scale: 1), height: 7), 0, "projeto")
+    func testTagInkIsTheOneThatReadsBestOnTheFace() {
+        XCTAssertEqual(NameTag.ink(on: magenta, theme: theme), theme.onAccent)
+        XCTAssertEqual(NameTag.ink(on: RGB(r: 0.1, g: 0.1, b: 0.3), theme: theme), theme.ink)
+        // Toda cor de empresa do tema, em qualquer tom, deixa a etiqueta legível.
+        for color in theme.agents + [theme.dim] {
+            for tone in 0..<CompanyResolver.toneCount {
+                let face = CompanyResolver.tone(color, index: tone)
+                XCTAssertGreaterThan(NameTag.ink(on: face, theme: theme).contrast(face), 3.8, face.hex)
+            }
+        }
     }
 
-    func testVeryNarrowHeaderKeepsTheNameAndTheState() {
-        let narrow = RenderedImage(AgentHeaderView(snapshot: snapshot(name: "NOME BEM COMPRIDO 123")),
-                                   width: 200, height: AgentHeaderView.height)
-        XCTAssertEqual(narrow.count(magenta, x: 30), 0, "sem espaço, o projeto some e o estado fica")
-        XCTAssertGreaterThan(narrow.count(theme.ink, x: 30, y: 8, width: 60, height: 14), 0, "nome")
-        XCTAssertGreaterThan(narrow.count(theme.dim, x: 100), 0, "pílula do estado")
+    func testHeaderShowsCompanyProjectAndAgentAsTagsInThatOrder() {
+        let header = AgentHeaderView(snapshot: snapshot(path: ""))
+        let tags = header.tags(width: 600)
+        let company = tagWidth("ACME"), project = tagWidth("PORTAL")
+        XCTAssertEqual(tags, [
+            AgentHeaderView.Tag(kind: .company, x: 8, width: company, text: "ACME"),
+            AgentHeaderView.Tag(kind: .project, x: 8 + company + 8, width: project, text: "PORTAL"),
+            AgentHeaderView.Tag(kind: .agent, x: 8 + company + 8 + project + 8, width: tagWidth("AGENT 1"),
+                                text: "AGENT 1"),
+        ])
+
+        let image = RenderedImage(header, width: 600, height: AgentHeaderView.height)
+        for (tag, face) in zip(tags, [magenta, theme.bg3, theme.bg3]) {
+            assertTag(in: image, tag, face: face)
+        }
+        XCTAssertEqual(image.count(magenta, x: 8 + company), 0, "só a etiqueta da empresa leva a cor dela")
+        XCTAssertGreaterThan(image.count(theme.onAccent, x: 8, y: 5, width: company, height: NameTag.height), 0,
+                             "letra escura na face clara")
+        for tag in tags.dropFirst() {
+            XCTAssertGreaterThan(image.count(theme.ink, x: tag.x, y: 5, width: tag.width, height: NameTag.height), 0,
+                                 tag.text)
+        }
+        XCTAssertEqual(image.count(theme.ink, x: 0, y: 0, width: tags[1].x, height: AgentHeaderView.height), 0)
+    }
+
+    /// A etiqueta é da empresa: igual em todos os agentes dela, sem o tom que distingue um do outro.
+    func testCompanyTagIgnoresTheToneOfTheAgent() {
+        let cyan = RGB(r: 0, g: 1, b: 1)
+        let header = AgentHeaderView(snapshot: snapshot(tone: cyan))
+        let image = RenderedImage(header, width: 600, height: AgentHeaderView.height)
+        assertTag(in: image, header.tags(width: 600)[0], face: magenta)
+        XCTAssertEqual(image.count(cyan), 0)
+
+        let drawn = render(AgentCardView(snapshot: snapshot(tone: cyan)))
+        XCTAssertGreaterThan(drawn.count(cyan), 0, "o card segue no tom do agente")
+        XCTAssertEqual(drawn.count(magenta), 0)
+    }
+
+    func testHeaderWithoutCompanySaysGlobalAndDoesNotRepeatIt() {
+        let home = AgentHeaderView(snapshot: snapshot(project: "GLOBAL", company: "", path: ""))
+        XCTAssertEqual(home.tags(width: 600), [
+            AgentHeaderView.Tag(kind: .company, x: 8, width: tagWidth("GLOBAL"), text: "GLOBAL"),
+            AgentHeaderView.Tag(kind: .agent, x: 8 + tagWidth("GLOBAL") + 8, width: tagWidth("AGENT 1"),
+                                text: "AGENT 1"),
+        ], "a home é do GLOBAL: a etiqueta do projeto diria a mesma coisa")
+        let image = RenderedImage(home, width: 600, height: AgentHeaderView.height)
+        assertTag(in: image, home.tags(width: 600)[0], face: magenta)
+
+        let loose = AgentHeaderView(snapshot: snapshot(project: "Notas", company: "", path: ""))
+        XCTAssertEqual(loose.tags(width: 600).map(\.text), ["GLOBAL", "NOTAS", "AGENT 1"],
+                       "pasta fora de toda empresa: GLOBAL na frente do projeto")
+    }
+
+    func testHeaderDoesNotRepeatTheProjectNamedLikeTheCompany() {
+        let header = AgentHeaderView(snapshot: snapshot(project: "Acme", company: "ACME", path: ""))
+        XCTAssertEqual(header.tags(width: 600).map(\.kind), [.company, .agent])
+        XCTAssertEqual(header.tags(width: 600).map(\.text), ["ACME", "AGENT 1"])
+    }
+
+    func testTagsKeepTheAccentsAndGoUpperCase() {
+        let header = AgentHeaderView(snapshot: snapshot(name: "Revisão", project: "Área do Cliente",
+                                                        company: "Indústria", path: ""))
+        XCTAssertEqual(header.tags(width: 900).map(\.text), ["INDÚSTRIA", "ÁREA DO CLIENTE", "REVISÃO"])
+    }
+
+    /// A cor já diz a empresa: apertou, o nome dela sai antes de o projeto perder uma letra.
+    func testTightHeaderTurnsTheCompanyIntoASquareOfItsColor() {
+        let header = AgentHeaderView(snapshot: snapshot(name: "AGENT 12", project: "Portal de Compras", path: ""))
+        let project = tagWidth("PORTAL DE COMPRAS", compact: true), agent = tagWidth("AGENT 12", compact: true)
+        let whole = 8 + tagWidth("ACME", compact: true) + 8 + project + 8 + agent
+        // Largura em que as três inteiras passariam da pílula por 1 ponto.
+        let width = (0..<AgentHeaderView.compactWidth).first { tagLimit(width: $0) == whole - 1 } ?? 0
+        XCTAssertEqual(header.tags(width: width + 1).map(\.text), ["ACME", "PORTAL DE COMPRAS", "AGENT 12"])
+
+        let tags = header.tags(width: width)
+        XCTAssertEqual(tags, [
+            AgentHeaderView.Tag(kind: .company, x: 8, width: NameTag.height, text: ""),
+            AgentHeaderView.Tag(kind: .project, x: 8 + NameTag.height + 8, width: project,
+                                text: "PORTAL DE COMPRAS"),
+            AgentHeaderView.Tag(kind: .agent, x: 8 + NameTag.height + 8 + project + 8, width: agent,
+                                text: "AGENT 12"),
+        ])
+        let image = RenderedImage(header, width: width, height: AgentHeaderView.height)
+        for (tag, face) in zip(tags, [magenta, theme.bg3, theme.bg3]) {
+            assertTag(in: image, tag, face: face)
+        }
+        let inner = NameTag.height - 4
+        XCTAssertEqual(image.count(magenta), inner * inner, "o quadrado é só a cor, sem letra")
+    }
+
+    /// Estreitando: sai o nome da empresa, o projeto é cortado, o projeto sai, o quadrado sai e só
+    /// no fim o nome do agente é cortado.
+    func testNarrowingHeaderCutsTheAgentNameLast() {
+        let header = AgentHeaderView(snapshot: snapshot(name: "AGENT 12", project: "Portal de Compras", path: ""))
+        let project = tagWidth("PORTAL DE COMPRAS", compact: true), agent = tagWidth("AGENT 12", compact: true)
+        var stages: [String] = []
+        for width in stride(from: AgentHeaderView.compactWidth - 1, through: 130, by: -1) {
+            let tags = header.tags(width: width)
+            XCTAssertEqual(tags.first?.x, 8, "largura \(width)")
+            XCTAssertLessThanOrEqual((tags.last?.x ?? 0) + (tags.last?.width ?? 0), tagLimit(width: width),
+                                     "largura \(width): passou da pílula")
+            for (before, after) in zip(tags, tags.dropFirst()) {
+                XCTAssertEqual(after.x, before.x + before.width + 8, "largura \(width)")
+            }
+            let stage: String
+            switch tags.map(\.kind) {
+            case [.company, .project, .agent]:
+                XCTAssertEqual(tags[2].width, agent, "largura \(width)")
+                if tags[1].width < project {
+                    XCTAssertEqual(tags[0].text, "", "o projeto só é cortado com a empresa já no quadrado")
+                    XCTAssertGreaterThanOrEqual(tags[1].width, tagWidth("A…", compact: true), "largura \(width)")
+                    stage = "projeto cortado"
+                } else {
+                    XCTAssertEqual(tags[1].width, project)
+                    stage = tags[0].text.isEmpty ? "quadrado" : "inteiro"
+                }
+            case [.company, .agent]:
+                XCTAssertEqual(tags[0].text, "")
+                XCTAssertEqual(tags[1].width, agent, "largura \(width)")
+                stage = "sem projeto"
+            case [.agent]:
+                XCTAssertLessThanOrEqual(tags[0].width, agent)
+                stage = tags[0].width == agent ? "só o agente" : "agente cortado"
+            default:
+                stage = "inesperado na largura \(width)"
+            }
+            XCTAssertEqual(tags.last?.text, "AGENT 12")
+            if stages.last != stage { stages.append(stage) }
+        }
+        XCTAssertEqual(stages, ["inteiro", "quadrado", "projeto cortado", "sem projeto", "só o agente",
+                                "agente cortado"])
+    }
+
+    func testHeaderWithoutRoomKeepsTheAgentTagASquare() {
+        let header = AgentHeaderView(snapshot: snapshot(name: "AGENT 12", project: "Portal de Compras", path: ""))
+        // Sem lugar nem para o quadrado, a etiqueta do agente não encolhe mais nem some.
+        for width in 0..<130 {
+            let tags = header.tags(width: width)
+            XCTAssertEqual(tags.map(\.kind), [.agent], "largura \(width)")
+            XCTAssertGreaterThanOrEqual(tags.first?.width ?? 0, NameTag.height, "largura \(width)")
+        }
+        XCTAssertEqual(header.tags(width: 0).first?.width, NameTag.height)
+    }
+
+    func testCutProjectStaysInsideItsTag() {
+        let header = AgentHeaderView(snapshot: snapshot(name: "AGENT 12", project: "Portal de Compras", path: ""))
+        let project = tagWidth("PORTAL DE COMPRAS", compact: true)
+        let width = (130..<AgentHeaderView.compactWidth).first { header.tags(width: $0).count == 3 } ?? 0
+        let tags = header.tags(width: width)
+        XCTAssertLessThan(tags[1].width, project, "na primeira largura com as três, o projeto está cortado")
+        let image = RenderedImage(header, width: width, height: AgentHeaderView.height)
+        for (tag, face) in zip(tags, [magenta, theme.bg3, theme.bg3]) {
+            assertTag(in: image, tag, face: face)
+        }
+    }
+
+    /// Cortado pelo fim, `AGENT 1` e `AGENT 2` virariam a mesma etiqueta.
+    func testCutAgentNameKeepsItsEnd() {
+        let one = AgentHeaderView(snapshot: snapshot(name: "REVISOR DE PR NUMERO 1"))
+        let two = AgentHeaderView(snapshot: snapshot(name: "REVISOR DE PR NUMERO 2"))
+        XCTAssertEqual(one.tags(width: 200), [
+            AgentHeaderView.Tag(kind: .agent, x: 8, width: tagLimit(width: 200) - 8, text: "REVISOR DE PR NUMERO 1"),
+        ])
+        let first = RenderedImage(one, width: 200, height: AgentHeaderView.height)
+        assertTag(in: first, one.tags(width: 200)[0], face: theme.bg3)
+        XCTAssertNotEqual(first, RenderedImage(two, width: 200, height: AgentHeaderView.height),
+                          "o fim do nome continua na tela")
+        XCTAssertGreaterThan(first.count(theme.dim, x: tagLimit(width: 200)), 0, "pílula do estado")
+    }
+
+    func testPathStartsAfterTheLastTag() {
+        let header = AgentHeaderView(snapshot: snapshot())
+        let last = header.tags(width: 900).last ?? AgentHeaderView.Tag(kind: .agent, x: 0, width: 0, text: "")
+        let end = last.x + last.width
+        let image = RenderedImage(header, width: 900, height: AgentHeaderView.height)
+        let height = AgentHeaderView.height
+        XCTAssertEqual(image.count(theme.bg2, x: end + 3, y: 0, width: 9, height: height), 9 * height,
+                       "folga entre a sombra da etiqueta e o caminho")
+        XCTAssertLessThan(image.count(theme.bg2, x: end + 12, y: 0, width: 40, height: height), 40 * height,
+                          "o caminho começa logo depois")
+
+        let bare = RenderedImage(AgentHeaderView(snapshot: snapshot(path: "")), width: 900, height: height)
+        XCTAssertEqual(bare.count(theme.bg2, x: end + 3, y: 0, width: tagLimit(width: 900) - end - 3, height: height),
+                       (tagLimit(width: 900) - end - 3) * height, "sem caminho, nada depois das etiquetas")
     }
 
     func testHeaderClicks() {
@@ -299,16 +471,22 @@ final class PixelViewsTests: XCTestCase {
         XCTAssertGreaterThan(onlyTheTag, 0, "há larguras em que só o aviso cabe")
     }
 
-    /// O nome e o projeto dizem qual é o agente: o aviso nunca tira espaço deles.
-    func testRemoteControlTagNeverShrinksTheNameOrTheProject() {
+    /// As etiquetas dizem qual é o agente: o aviso nunca tira espaço delas.
+    func testRemoteControlTagNeverShrinksTheNameTags() {
         let plain = AgentHeaderView(snapshot: snapshot(.idle, project: "PORTAL DO CLIENTE"))
         let remote = AgentHeaderView(snapshot: snapshot(.idle, project: "PORTAL DO CLIENTE", remoteControl: true))
         var withTag = 0
         for width in stride(from: 700, through: 200, by: -10) {
             let off = RenderedImage(plain, width: width, height: AgentHeaderView.height)
             let on = RenderedImage(remote, width: width, height: AgentHeaderView.height)
-            XCTAssertEqual(on.count(theme.ink), off.count(theme.ink), "nome na largura \(width)")
-            XCTAssertEqual(on.count(magenta), off.count(magenta), "projeto na largura \(width)")
+            let tags = plain.tags(width: width)
+            XCTAssertEqual(remote.tags(width: width), tags, "etiquetas na largura \(width)")
+            // Só a área das etiquetas: o caminho, suavizado, tem pixels de tom vizinho ao da face.
+            let end = (tags.last?.x ?? 0) + (tags.last?.width ?? 0) + NameTag.shadow
+            for color in [theme.bg3, theme.ink, magenta, theme.shadow] {
+                XCTAssertEqual(on.count(color, width: end), off.count(color, width: end),
+                               "\(color.hex) na largura \(width)")
+            }
             if on.count(RemoteBadge.color(theme)) > 0 { withTag += 1 }
         }
         XCTAssertGreaterThan(withTag, 0)

@@ -6,10 +6,12 @@ struct AgentSnapshot: Equatable {
     var name: String
     /// Projeto da pasta do agente: o apelido, o nome da pasta arrumado ou `GLOBAL`.
     var project: String = ""
-    /// Vazio no agente do `GLOBAL`, que não é de empresa nenhuma.
+    /// Vazio no agente da home, que não é de empresa nenhuma: o cabeçalho mostra `GLOBAL`.
     var company: String
-    /// Cor da empresa já no tom deste agente.
+    /// Cor da empresa já no tom deste agente: a faixa e o projeto no card.
     var color: RGB
+    /// Cor da empresa, igual em todos os agentes dela: a etiqueta no cabeçalho.
+    var companyColor: RGB
     /// Pasta de trabalho na forma curta (`~/x`).
     var path: String
     var state: AgentState
@@ -20,12 +22,24 @@ struct AgentSnapshot: Equatable {
     var remoteControl = false
 }
 
-/// Cabeçalho do painel (`_draw_head` do original). O quadrado na cor da empresa ocupa o
-/// lugar do mascote, que chega no M3.
+/// Cabeçalho do painel (`_draw_head` do original). Três etiquetas dizem de quem é o agente, da
+/// esquerda para a direita: a empresa na cor dela, o projeto e o nome do agente.
 final class AgentHeaderView: PixelView {
     static let height = 30
-    /// Abaixo desta largura a pílula do estado encolhe para o nome e o projeto caberem.
+    /// Abaixo desta largura a pílula do estado e as etiquetas encolhem.
     static let compactWidth = 420
+
+    /// Uma etiqueta do cabeçalho e onde ela cai.
+    struct Tag: Equatable {
+        enum Kind { case company, project, agent }
+
+        var kind: Kind
+        var x: Int
+        /// Largura da face. Menor que a do texto: o desenho corta o texto com reticências.
+        var width: Int
+        /// Vazio na empresa que virou o quadrado da cor.
+        var text: String
+    }
 
     var snapshot: AgentSnapshot { didSet { if snapshot != oldValue { needsDisplay = true } } }
     /// Relógio das animações, em segundos.
@@ -68,23 +82,56 @@ final class AgentHeaderView: PixelView {
         menuProvider?()
     }
 
-    private static let square = 14
+    private static let tagX = 8
+    /// Entre duas etiquetas: a sombra da primeira e 5 pontos de folga.
+    private static let tagGap = 8
+
+    /// As etiquetas que cabem nesta largura.
+    func tags(width: Int) -> [Tag] {
+        layout(width: width).tags
+    }
+
+    /// As etiquetas que cabem até `limit`. Apertou, nesta ordem: a empresa vira o quadrado da cor
+    /// dela, que já diz qual é; o projeto é cortado e depois sai; o quadrado sai; e só no fim o nome
+    /// do agente é cortado, pelo começo. Cortados pelo fim, `AGENT 1` e `AGENT 2` ficariam iguais.
+    private func tags(limit: Int, compact: Bool) -> [Tag] {
+        func width(_ text: String) -> Int { NameTag.width(text, compact: compact) }
+        let company = snapshot.company.isEmpty ? ProjectNaming.global : snapshot.company.uppercased()
+        let project = snapshot.project.uppercased()
+        let agent = snapshot.name.uppercased()
+        // O projeto que tem o mesmo nome da empresa não se repete.
+        let hasProject = !project.isEmpty && project != company
+        let gap = Self.tagGap, square = NameTag.height, room = limit - Self.tagX
+
+        var parts: [(kind: Tag.Kind, text: String, width: Int)]
+        let whole = width(company) + gap + (hasProject ? width(project) + gap : 0) + width(agent)
+        let projectRoom = room - square - gap - gap - width(agent)
+        if whole <= room {
+            parts = [(.company, company, width(company)), (.project, project, width(project)),
+                     (.agent, agent, width(agent))]
+        } else if hasProject, projectRoom >= width("A…") {
+            parts = [(.company, "", square), (.project, project, min(width(project), projectRoom)),
+                     (.agent, agent, width(agent))]
+        } else if square + gap + width(agent) <= room {
+            parts = [(.company, "", square), (.agent, agent, width(agent))]
+        } else {
+            parts = [(.agent, agent, max(square, min(width(agent), room)))]
+        }
+        if !hasProject { parts.removeAll { $0.kind == .project } }
+
+        var x = Self.tagX
+        return parts.map { part in
+            defer { x += part.width + gap }
+            return Tag(kind: part.kind, x: x, width: part.width, text: part.text)
+        }
+    }
 
     /// Onde cada parte cai numa largura. O desenho e o clique no resumo do diff leem a mesma conta.
     private struct Layout {
         var scale = 2
         var pillX = 0
         var pillWidth = 0
-        var nameX = 0
-        var name = ""
-        var nameScale = 2
-        var projectX = 0
-        /// Vazio: o agente não tem projeto ou ele não coube.
-        var project = ""
-        var projectScale = 2
-        var companyX = 0
-        /// Vazio: sem empresa, igual ao projeto ou não coube.
-        var company = ""
+        var tags: [Tag] = []
         /// nil: controle remoto desligado ou o aviso não coube.
         var remoteX: Int?
         /// nil: sem resumo do diff ou ele não coube.
@@ -100,41 +147,16 @@ final class AgentHeaderView: PixelView {
         layout.pillX = width - layout.pillWidth - 6
         var right = layout.pillX - 10
 
-        // O nome e o projeto dividem o que há até a pílula. Apertou: o projeto desce para a escala 1,
-        // depois o nome, e só então o nome é cortado. Cortados, `AGENT 1` e `AGENT 2` ficariam iguais.
-        var x = 8 + Self.square + 8
-        let project = PixelFont.normalize(snapshot.project)
-        let room = right - x
-        let nameWidth = PixelFont.textWidth(snapshot.name, scale: 2)
-        if !project.isEmpty, nameWidth + 14 + PixelFont.textWidth(project, scale: 2) > room {
-            layout.projectScale = 1
-            if nameWidth + 14 + PixelFont.textWidth(project, scale: 1) > room { layout.nameScale = 1 }
-        }
-        let reserved = project.isEmpty
-            ? 0 : min(PixelFont.textWidth(project, scale: layout.projectScale), room / 2) + 14
-        layout.nameX = x
-        layout.name = PixelFont.fit(snapshot.name, scale: layout.nameScale, width: max(60, room - reserved))
-        x += PixelFont.textWidth(layout.name, scale: layout.nameScale) + 14
-        if !project.isEmpty, right - x >= PixelFont.textWidth("A...", scale: layout.projectScale) {
-            layout.projectX = x
-            layout.project = PixelFont.fit(project, scale: layout.projectScale, width: right - x)
-            x += PixelFont.textWidth(layout.project, scale: layout.projectScale) + 12
-        }
+        // As etiquetas escolhem primeiro: são elas que dizem qual é o agente.
+        layout.tags = tags(limit: right, compact: layout.scale == 1)
+        let x = layout.tags.last.map { $0.x + $0.width + NameTag.shadow + 9 } ?? Self.tagX
 
-        // Depois do projeto: o aviso do controle remoto encostado na pílula, a empresa, o resumo do
-        // diff antes do aviso e o caminho com o que sobrar. O aviso escolhe primeiro: a empresa e o
-        // caminho também estão no card, e o resumo do diff, no card e no menu.
+        // Depois das etiquetas: o aviso do controle remoto encostado na pílula, o resumo do diff antes
+        // do aviso e o caminho com o que sobrar. O aviso escolhe primeiro: o caminho também está no
+        // card, e o resumo do diff, no card e no menu.
         if snapshot.remoteControl, right - RemoteBadge.width >= x {
             layout.remoteX = right - RemoteBadge.width
             right -= RemoteBadge.width + 10
-        }
-        // A empresa que tem o mesmo nome do projeto não se repete.
-        let company = PixelFont.normalize(snapshot.company)
-        let companyWidth = PixelFont.textWidth(company, scale: 1)
-        if !company.isEmpty, company != project, right - x >= companyWidth {
-            layout.companyX = x
-            layout.company = company
-            x += companyWidth + 10
         }
         if let diff = snapshot.diff {
             let badgeWidth = DiffBadge.width(diff)
@@ -150,24 +172,17 @@ final class AgentHeaderView: PixelView {
 
     override func render(_ context: CGContext, width: Int, height: Int) {
         Pixel.fill(context, 0, 0, width, height, theme.bg2)
-        let square = Self.square
-        Pixel.fill(context, 8, (height - square) / 2, square, square, snapshot.color)
-        Pixel.frame(context, 8, (height - square) / 2, square, square, thickness: 2, snapshot.color.darkened(0.35))
 
         let layout = layout(width: width)
         let scale = layout.scale, pillX = layout.pillX, pillWidth = layout.pillWidth
         let pillHeight = 20
         let pillY = (height - pillHeight) / 2
 
-        Pixel.text(context, layout.name, layout.nameX, (height - 7 * layout.nameScale) / 2, scale: layout.nameScale,
-                   theme.ink, shadow: layout.nameScale == 2 ? theme.shadow : nil)
-        if !layout.project.isEmpty {
-            Pixel.text(context, layout.project, layout.projectX, (height - 7 * layout.projectScale) / 2,
-                       scale: layout.projectScale, snapshot.color,
-                       shadow: layout.projectScale == 2 ? theme.shadow : nil)
-        }
-        if !layout.company.isEmpty {
-            Pixel.text(context, layout.company, layout.companyX, (height - 7) / 2, scale: 1, theme.dim)
+        for tag in layout.tags {
+            // Só a empresa leva cor. O nome do agente cortado guarda o fim, que é o que o distingue.
+            NameTag.draw(context, tag.text, x: tag.x, y: (height - NameTag.height) / 2, width: tag.width,
+                         face: tag.kind == .company ? snapshot.companyColor : theme.bg3, compact: scale == 1,
+                         truncate: tag.kind == .agent ? .byTruncatingHead : .byTruncatingTail, theme: theme)
         }
         if let diff = snapshot.diff, let badgeX = layout.badgeX {
             DiffBadge.draw(context, diff, x: badgeX, y: (height - 7) / 2, theme: theme)

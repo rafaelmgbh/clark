@@ -85,6 +85,7 @@ mac/
 | Unidade | Faz |
 |---|---|
 | `ShellEnvironment` | Captura o ambiente do shell de login uma vez na abertura. |
+| `NameTag` | Etiqueta com cara de botão, usada no cabeçalho do agente para a empresa, o projeto e o nome. |
 | `AgentPaneView` | Cabeçalho desenhado + subclasse de `LocalProcessTerminalView`; traduz eventos do terminal para a máquina de estado. |
 | `AgentCardView` | Card da lista lateral: nome, estado, projeto, empresa, caminho e as duas últimas linhas úteis do terminal. |
 | `SessionDigestView` | Faixa `ULTIMA SESSAO` entre o cabeçalho e o terminal do agente que começa conversa nova num projeto. |
@@ -127,7 +128,7 @@ O arquivo só vale se é um arquivo comum de até 64 KiB, nomeia o mesmo `pid` e
 
 **Controle remoto.** O mesmo arquivo diz se o controle remoto do Claude Code (`/remote-control`) está ligado na sessão. O rodapé do Claude Code avisa com `/rc active`, mas some em terminal estreito, e num painel do CLARK o terminal quase sempre é estreito. Enquanto o controle remoto dura, o arquivo guarda o nome da sessão remota em `bridgeSessionId`; ao desligar, o Claude Code grava `null` no lugar. Texto não vazio nesse campo liga a etiqueta `REMOTO`; campo ausente, `null`, vazio ou de outro tipo desliga, assim como a falta do arquivo. O CLARK não guarda o nome nem monta o endereço da sessão: a etiqueta só avisa, sem clique.
 
-A etiqueta é azul (`term[4]`, cor que nenhum estado usa), com as letras na cor do fundo. Ela não é estado: fica fora da máquina de estado e das contagens da barra superior. O controle remoto é relido uma vez por segundo em qualquer estado menos EXITED, inclusive em WORKING, quando o arquivo não serve para decidir o estado. Em EXITED a etiqueta some na hora e o arquivo não é mais lido, porque o processo morto à força deixa o arquivo para trás. No cabeçalho ela fica encostada na etiqueta de estado e escolhe o espaço antes da empresa, do resumo do diff e do caminho, sem tirar espaço do nome e do projeto: no aperto sai primeiro o resumo do diff, e sem espaço nem para ela o aviso fica só no card. No card ela fica na ponta direita da linha de detalhe, com o resumo do diff à esquerda.
+A etiqueta é azul (`term[4]`, cor que nenhum estado usa), com as letras na cor do fundo. Ela não é estado: fica fora da máquina de estado e das contagens da barra superior. O controle remoto é relido uma vez por segundo em qualquer estado menos EXITED, inclusive em WORKING, quando o arquivo não serve para decidir o estado. Em EXITED a etiqueta some na hora e o arquivo não é mais lido, porque o processo morto à força deixa o arquivo para trás. No cabeçalho ela fica encostada na etiqueta de estado e escolhe o espaço antes do resumo do diff e do caminho, sem tirar espaço das etiquetas da empresa, do projeto e do nome: no aperto sai primeiro o resumo do diff, e sem espaço nem para ela o aviso fica só no card. No card ela fica na ponta direita da linha de detalhe, com o resumo do diff à esquerda.
 
 **Notificação.** Só com a janela inativa: notificação do macOS com `CLARK · <agente>`, selo no Dock com a contagem de DONE e pedido de atenção do app.
 
@@ -135,7 +136,7 @@ A etiqueta é azul (`term[4]`, cor que nenhum estado usa), com as letras na cor 
 
 ## Isolamento por empresa
 
-**Resolução.** Primeiro os `paths` explícitos de `companies.json`, vencendo o prefixo mais longo. Depois a detecção automática: a primeira pasta abaixo de uma das `roots` (padrão `~/Projetos`) vira a empresa, com cor escolhida na paleta do tema por hash estável do nome. Fora disso, `AVULSO`. O arquivo é opcional. Um `path` igual a uma das `roots`, ou acima dela, cobre as pastas de todas as empresas dali: a regra vale como foi escrita, e a barra superior avisa. Um `path` que ainda não existe é resolvido até a pasta mais funda que já existe, com links e caixa do disco; o trecho restante vale como foi escrito, para a regra casar com a pasta quando ela nascer.
+**Resolução.** Primeiro os `paths` explícitos de `companies.json`, vencendo o prefixo mais longo. Depois a detecção automática: a primeira pasta abaixo de uma das `roots` (padrão `~/Projetos`) vira a empresa, com cor escolhida na paleta do tema por hash estável do nome. Fora disso, `GLOBAL`, o mesmo nome do projeto da home: o agente não é de empresa nenhuma, e `CLARK_COMPANY` vale `GLOBAL`. O arquivo é opcional. Um `path` igual a uma das `roots`, ou acima dela, cobre as pastas de todas as empresas dali: a regra vale como foi escrita, e a barra superior avisa. Um `path` que ainda não existe é resolvido até a pasta mais funda que já existe, com links e caixa do disco; o trecho restante vale como foi escrito, para a regra casar com a pasta quando ela nascer.
 
 ```json
 {
@@ -160,9 +161,11 @@ Quem autentica o `claude` por variável de ambiente precisa listá-la em `env_al
 
 **O que o filtro não alcança.** O filtro vale para o ambiente com que o agente nasce. Um shell aberto pelo agente relê os arquivos de inicialização do shell: no zsh, todo `zsh -c` lê o `~/.zshenv`, e uma variável exportada ali volta para o agente de qualquer empresa. Na abertura, o app roda `$SHELL -c` a partir do ambiente já sem os nomes do passo 3 e avisa na barra os nomes que voltam, menos os do `env_allow` global. Sem `claude`, o painel é o shell de login, que relê tudo: ali o menu do agente diz que o filtro não vale, em vez de listar variáveis removidas.
 
-**Cor.** Cabeçalho, card e dragão usam a cor da empresa. Agentes da mesma empresa escurecem em passos de 15% (0, 15, 30, 45 e recomeça). A paleta tem oito cores: duas empresas detectadas pela pasta podem cair na mesma, e `color` em `companies.json` desfaz o empate.
+**Cor.** A etiqueta da empresa no cabeçalho usa a cor da empresa, igual em todos os agentes dela. O card e o dragão usam essa cor no tom do agente: agentes da mesma empresa escurecem em passos de 15% (0, 15, 30, 45 e recomeça). A paleta tem oito cores: duas empresas detectadas pela pasta podem cair na mesma, e `color` em `companies.json` desfaz o empate.
 
-**Projeto do agente.** Todo agente tem uma pasta, e o `claude` roda dentro dela: é o que faz o `CLAUDE.md`, o `AGENTS.md` e o `.claude/` do projeto valerem. O agente aberto na home é o `GLOBAL`, fora de projeto. Nos outros, o nome do projeto é o apelido, quando existe, ou o nome arrumado (`portal_compras` vira `Portal Compras`) do repositório em que a pasta está, ou da própria pasta quando ela não está em repositório. O cabeçalho mostra `AGENT 2  PORTAL DE COMPRAS  ACME`: o projeto na cor da empresa e a empresa em cinza, omitida no `GLOBAL` e quando é igual ao projeto. Sem largura, o projeto e depois o nome passam para a fonte pequena antes de qualquer corte. O card tem 104 px de altura, com o projeto numa linha própria.
+**Projeto do agente.** Todo agente tem uma pasta, e o `claude` roda dentro dela: é o que faz o `CLAUDE.md`, o `AGENTS.md` e o `.claude/` do projeto valerem. O agente aberto na home é o `GLOBAL`, fora de projeto. Nos outros, o nome do projeto é o apelido, quando existe, ou o nome arrumado (`portal_compras` vira `Portal Compras`) do repositório em que a pasta está, ou da própria pasta quando ela não está em repositório. O card tem 104 px de altura, com o projeto numa linha própria, no tom do agente, e a empresa em cinza.
+
+**Etiquetas do cabeçalho.** O cabeçalho diz de quem é o agente em três etiquetas, da esquerda para a direita: a empresa, o projeto e o nome do agente, em maiúsculas. Elas têm a cara dos botões da barra (`PROJETO`, `FOCO`): 20 px de altura, letra monoespaçada em negrito de 11 pontos, moldura de 2 px e sombra dura de 3 px. A da empresa tem a face na cor da empresa, com a letra na tinta que dá mais contraste sobre ela; as outras duas têm a face neutra (`bg3`). O agente fora de empresa leva `GLOBAL` na primeira, na cor de quem não tem empresa, e o projeto de mesmo nome que a empresa não se repete: o agente da home mostra `GLOBAL` e o nome. Abaixo de 420 px de cabeçalho a letra cai para 10 pontos. Quando nem assim cabe, nesta ordem: a empresa vira um quadrado da cor dela; o projeto é cortado com reticências e depois sai; o quadrado sai; e só no fim o nome do agente é cortado, pelo começo, porque é o fim que distingue `AGENT 1` de `AGENT 2`. As etiquetas não são botões: o clique e o duplo clique valem para o cabeçalho inteiro. O quadrado na cor do agente, que guardava o lugar do mascote, saiu do cabeçalho; onde o mascote do M3 entra nele fica em aberto.
 
 **Início.** O CLARK restaura os agentes salvos. Sem nenhum, e sem pedido na linha de comando, abre um agente no `GLOBAL`. O ⌘N e o `+ AGENT` abrem sempre no `GLOBAL`; o ⌘⇧N (`Novo agente nesta pasta`) repete a pasta do agente em foco. Não existe mais pasta padrão: o `cwd` do `config.json` é preservado no arquivo e ignorado.
 
@@ -182,7 +185,7 @@ Projeto é a pasta com `.git` ou com instruções para agente (`CLAUDE.md`, `AGE
 
 Não existe no original. Cada agente mostra o que mudou no repositório da sua pasta desde o último commit.
 
-**Resumo.** O cabeçalho e o card trazem `+12 -3 4 ARQ`: linhas a mais em verde, linhas a menos em vermelho e a quantidade de arquivos. Repositório sem mudança, pasta fora de repositório e máquina sem `git` não mostram resumo. Quando falta largura, a empresa fica e o resumo sai.
+**Resumo.** O cabeçalho e o card trazem `+12 -3 4 ARQ`: linhas a mais em verde, linhas a menos em vermelho e a quantidade de arquivos. Repositório sem mudança, pasta fora de repositório e máquina sem `git` não mostram resumo. Quando falta largura, as etiquetas ficam e o resumo sai.
 
 **Janela.** O ⌘⇧D e o `Ver diff` do menu do cabeçalho abrem a janela do diff: à esquerda os arquivos (estado, caminho, contagem), à direita o diff unificado do arquivo escolhido, com uma cor por tipo de linha. A janela é uma só no app, e pedir o diff de outro agente troca o conteúdo dela. Com ela na frente, o ⌘W fecha a janela e não o agente. Fechada, ela larga o agente e não lê mais nada. Fechar o agente mostrado fecha a janela.
 
@@ -307,7 +310,7 @@ Tudo em `~/.config/clark/`.
 `swift test` em `ClarkCoreTests`:
 
 - `EnvPolicy`: cada padrão de segredo remove; as formas curtas de senha só contam como sufixo; `env_allow` global e da empresa devolvem; variável liberada para uma empresa não aparece em outra; as variáveis de sessão do pai saem sempre.
-- `CompanyResolver`: prefixo mais longo vence; detecção automática sob `roots`; `AVULSO`; cor estável para o mesmo nome; `path` que cobre uma root gera aviso.
+- `CompanyResolver`: prefixo mais longo vence; detecção automática sob `roots`; `GLOBAL`; cor estável para o mesmo nome; `path` que cobre uma root gera aviso.
 - `AgentStateMachine`: cada linha da tabela de estado, com relógio injetado, e o SHELL em cada ponto em que ela diz IDLE.
 - `SessionReport`: os três valores de `status`; valor desconhecido não dá atividade; `pid` de outro processo, arquivo mais velho que o processo, pasta ou pipe no lugar do arquivo e arquivo grande demais não dão resposta; o controle remoto liga com o nome da sessão remota, desliga com `null`, texto vazio ou outro tipo, e não depende do `status`.
 - `SessionLocator` e `ClaudeCommand`: UUID inválido é trocado; `--resume` contra `--session-id`; flags de sessão nos extras suprimem as do app; detecção das flags de permissão.
