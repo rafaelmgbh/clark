@@ -28,6 +28,31 @@ final class AgentTerminalView: LocalProcessTerminalView {
     private(set) var hasExited = false
     private var replying = false
 
+    /// Leitura dos links da tela que custa mais que isto é cara: as seguintes são espaçadas.
+    static let linkReadBudget: TimeInterval = 0.002
+    /// Depois de uma leitura cara o terminal espera este tanto de vezes o custo dela até a próxima:
+    /// a leitura fica com no máximo um décimo do tempo.
+    static let linkReadRest: TimeInterval = 9
+
+    /// Sublinha o que o ⌘-clique abre. Sem isso o link é clicável e ninguém fica sabendo.
+    let linkUnderlines = LinkUnderlineView()
+    /// Relógio da leitura dos links. Trocado nos testes.
+    var uptime: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    private var linksReadableAt: TimeInterval = 0
+    private var linkReadScheduled = false
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        linkUnderlines.frame = bounds
+        linkUnderlines.autoresizingMask = [.width, .height]
+        addSubview(linkUnderlines, positioned: .below, relativeTo: nil)
+        // O SwiftTerm passa a avisar, antes de cada redesenho, que a tela mudou.
+        notifyUpdateChanges = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) não é usado") }
+
     /// Código de saída a partir do status bruto que o SwiftTerm repassa do `waitpid`.
     static func exitCode(fromWaitStatus status: Int32?) -> Int32? {
         guard let status else { return nil }
@@ -45,6 +70,8 @@ final class AgentTerminalView: LocalProcessTerminalView {
             SwiftTerm.Color(red8: Self.byte(color.r), green8: Self.byte(color.g), blue8: Self.byte(color.b))
         })
         font = appearance.font
+        linkUnderlines.color = theme.term[4]
+        refreshLinkUnderlines()
     }
 
     private static func byte(_ value: Double) -> UInt16 {
@@ -105,17 +132,61 @@ final class AgentTerminalView: LocalProcessTerminalView {
         onExit?(Self.exitCode(fromWaitStatus: exitCode))
     }
 
-    // Só http e https: um link `file:` ou de outro esquema vindo da saída do agente não abre nada.
     override func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
-        guard let url = URL(string: link), let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else { return }
+        guard let url = TerminalLinks.webURL(link) else { return }
         openURL(url)
     }
 
     override func setFrameSize(_ newSize: NSSize) {
         let changed = newSize != frame.size
         super.setFrameSize(newSize)
-        if changed { onResize?() }
+        guard changed else { return }
+        // O texto mudou de lugar agora, e o SwiftTerm só avisa no redesenho seguinte.
+        refreshLinkUnderlines()
+        onResize?()
+    }
+
+    // A tela mudou ou rolou: o aviso chega antes do redesenho, e os dois saem juntos.
+    override func rangeChanged(source: TerminalView, startY: Int, endY: Int) {
+        super.rangeChanged(source: source, startY: startY, endY: endY)
+        refreshLinkUnderlines()
+    }
+
+    /// Refaz os sublinhados dos links com o que está na tela.
+    func refreshLinkUnderlines() {
+        linkUnderlines.metrics = linkMetrics()
+        let start = uptime()
+        guard start >= linksReadableAt else {
+            // Cedo demais depois de uma leitura cara. O sublinhado velho ficaria debaixo de outro
+            // texto: melhor nenhum até a próxima leitura.
+            linkUnderlines.spans = []
+            scheduleLinkRead(after: linksReadableAt - start)
+            return
+        }
+        linkUnderlines.spans = TerminalLinks.spans(in: getTerminal())
+        let cost = uptime() - start
+        linksReadableAt = cost > Self.linkReadBudget ? start + cost * (1 + Self.linkReadRest) : 0
+    }
+
+    private func scheduleLinkRead(after delay: TimeInterval) {
+        guard !linkReadScheduled else { return }
+        linkReadScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            self.linkReadScheduled = false
+            self.refreshLinkUnderlines()
+        }
+    }
+
+    /// O traço fica onde o SwiftTerm desenha o sublinhado dele: abaixo da linha de base, na posição
+    /// e na espessura que a fonte pede.
+    private func linkMetrics() -> LinkUnderlineView.Metrics {
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        let rows = CGFloat(max(1, getTerminal().rows))
+        return LinkUnderlineView.Metrics(
+            cell: CGSize(width: caretFrame.width, height: getOptimalFrameSize().height / rows),
+            offset: ceil(font.leading - font.descender) + font.underlinePosition,
+            thickness: max(1, (scale * font.underlineThickness).rounded() / scale))
     }
 
     /// Linhas visíveis acima do cursor, de cima para baixo.

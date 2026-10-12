@@ -175,6 +175,10 @@ horas de renovação. Vale a conta padrão do Claude Code; sem ela no arquivo, a
 
 Dois cliques no cabeçalho do agente renomeiam. O botão `[ ]` do cabeçalho dá zoom e o `x` fecha.
 
+No terminal, ⌘-clique num endereço `http` ou `https` abre o navegador. Esses endereços aparecem
+sublinhados em azul. O que não tem sublinhado (caminho de arquivo, `file:`, `ssh:`) o clique não
+abre.
+
 ### Estados
 
 | Estado | Significado |
@@ -284,6 +288,8 @@ O que os testes não cobrem (tela, teclado, o `claude` de verdade) tem roteiro m
 - A fila de trabalho (`/paralelo` e `/to-dev`) fica para o M2.
 - Renomear um agente não muda o `CLARK_AGENT` do processo que já está rodando.
 - Os avisos da interface saem sem acento, porque a fonte de pixels só tem ASCII.
+- O link que começa mais de oito linhas acima da tela aparece sem sublinhado. O ⌘-clique abre do
+  mesmo jeito.
 
 ## Licença
 

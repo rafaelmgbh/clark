@@ -13,6 +13,7 @@ usa a tela, o teclado e a conta do `claude`. Nada aqui é automatizado.
 | Menu com grupos por pasta e worktrees à parte, medidor de consumo na barra e estado `SHELL` (commit seguinte ao `721b889`) | 451 testes verdes, 30 mutações mortas (13 do menu e do medidor, 17 do `SHELL`), menu conferido contra as pastas reais, arquivo de sessão conferido num agente real | nunca |
 | Coluna de arquivos alterados (commit seguinte ao `7cc4de7`) | 500 testes verdes, 78 mutações mortas, imagens renderizadas nos testes | nunca |
 | Aviso de controle remoto (commit seguinte ao `9bdf093`) | 515 testes verdes, 26 mutações mortas, imagem renderizada nos testes, campo do arquivo de sessão conferido em sessões reais | nunca |
+| Cabeçalho em etiquetas, `Mais usados` no menu e links sublinhados (os três commits seguintes ao do aviso de controle remoto) | 580 testes verdes, 102 mutações mortas (30 do cabeçalho, 24 do menu, 48 dos links), imagens renderizadas nos testes, custo da leitura dos links medido no build otimizado | nunca |
 | Ícone do dragão (`7fa1ec6`) | coberto pelos testes | nunca |
 | Núcleo do M1 (`80cb7e8`) | coberto pelos testes | em uso, mas o roteiro da Task 15 do plano nunca foi rodado inteiro |
 | `Tests/packaging.sh` depois do diff | não rodou: exige o CLARK fechado | não se aplica |
@@ -292,7 +293,7 @@ com 17 passos. Nenhum deles foi registrado como rodado. Os que mais pesam, por o
 
 - [ ] **C6. Os outros passos da Task 15,** na ordem do plano.
 
-## D. Consumo do plano, aviso de fim de turno, estado SHELL e controle remoto
+## D. Consumo do plano, aviso de fim de turno, estado SHELL, controle remoto e links
 
 Estes passos pedem o [AiUsageBar](https://github.com/rafaelmgbh/ai-usage-bar) rodando no mesmo Mac.
 
@@ -344,6 +345,16 @@ Estes passos pedem o [AiUsageBar](https://github.com/rafaelmgbh/ai-usage-bar) ro
   Esperado: `GAME OVER` sem a etiqueta. Enter reabre a conversa, e a etiqueta só volta se o
   controle remoto voltar (com `Enable Remote Control for all sessions` ligado no `/config`, ele
   volta sozinho).
+
+- [ ] **D12. Links sublinhados.** Num agente, peça: `escreva o endereço https://example.com/a, o
+  caminho ~/Projetos e um endereço de mais de duas linhas`. Esperado: os dois endereços aparecem
+  sublinhados em azul, o comprido em todas as linhas que ocupa; o caminho, não. ⌘-clique num
+  endereço sublinhado abre o navegador nele; ⌘-clique no caminho não abre nada.
+
+- [ ] **D13. Links e a tela.** Com links na tela, role o histórico para cima e para baixo, mude o
+  tamanho da janela, passe para a grade e use ⌘+ e ⌘-. Esperado: o traço acompanha o texto, sem
+  ficar para trás nem aparecer debaixo de outro texto. Selecionar e copiar um endereço sublinhado
+  funciona como antes.
 
 ## E. Depois do teste
 

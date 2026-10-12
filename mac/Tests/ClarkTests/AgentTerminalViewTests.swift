@@ -7,7 +7,11 @@ final class AgentTerminalViewTests: XCTestCase {
     private let environment = ["TERM=xterm-256color", "PATH=/usr/bin:/bin"]
 
     private func makeView() -> AgentTerminalView {
-        AgentTerminalView(frame: NSRect(x: 0, y: 0, width: 640, height: 400))
+        let view = AgentTerminalView(frame: NSRect(x: 0, y: 0, width: 640, height: 400))
+        // Relógio parado: a leitura dos links nunca parece cara, e uma máquina lenta não esconde o
+        // sublinhado no meio de um teste. Os testes do custo da leitura trocam o relógio.
+        view.uptime = { 0 }
+        return view
     }
 
     /// Roda o script até o fim e devolve o terminal.
@@ -99,6 +103,107 @@ final class AgentTerminalViewTests: XCTestCase {
         view.requestOpenLink(source: view, link: "https://example.com/a?b=1", params: [:])
         view.requestOpenLink(source: view, link: "HTTP://example.com", params: [:])
         XCTAssertEqual(opened, ["https://example.com/a?b=1", "HTTP://example.com"])
+    }
+
+    // MARK: links sublinhados
+
+    func testLinkInTheOutputIsUnderlined() {
+        let view = run("printf 'veja https://example.com/a\\n'")
+        XCTAssertTrue(waitUntil(timeout: 5) { view.linkUnderlines.spans == [LinkSpan(row: 0, columns: 5..<26)] })
+    }
+
+    func testUnderlinesAreRedoneWhenTheScreenChanges() {
+        let view = makeView()
+        view.feed(text: "https://example.com/a")
+        XCTAssertTrue(waitUntil(timeout: 5) { view.linkUnderlines.spans == [LinkSpan(row: 0, columns: 0..<21)] })
+        // Apaga a linha: o sublinhado some com o texto.
+        view.feed(text: "\r\u{1b}[2K")
+        XCTAssertTrue(waitUntil(timeout: 5) { view.linkUnderlines.spans.isEmpty })
+    }
+
+    func testUnderlinesFollowTheScroll() {
+        let view = makeView()
+        view.resize(cols: 40, rows: 4)
+        view.feed(text: "https://example.com/a\r\n1\r\n2\r\n3\r\n4\r\n5")
+        view.refreshLinkUnderlines()
+        XCTAssertEqual(view.linkUnderlines.spans, [])
+        view.scrollTo(row: 0)
+        XCTAssertEqual(view.linkUnderlines.spans, [LinkSpan(row: 0, columns: 0..<21)])
+    }
+
+    func testUnderlinesFollowTheCellsAndTheTheme() {
+        let view = makeView()
+        view.linkUnderlines.color = .black
+        view.apply(TerminalAppearance(theme: .dark, fontName: "Menlo", fontSize: 15))
+        let metrics = view.linkUnderlines.metrics
+        XCTAssertGreaterThan(metrics.cell.width, 0)
+        XCTAssertEqual(metrics.cell.width, view.caretFrame.width)
+        XCTAssertEqual(metrics.cell.height * CGFloat(view.getTerminal().rows), view.getOptimalFrameSize().height,
+                       accuracy: 0.01)
+        // O traço fica no pé da célula, abaixo da linha de base do texto.
+        XCTAssertGreaterThan(metrics.offset, 0)
+        XCTAssertLessThan(metrics.offset, ceil(view.font.leading - view.font.descender))
+        XCTAssertGreaterThanOrEqual(metrics.thickness, 1)
+        XCTAssertEqual(view.linkUnderlines.color, Theme.dark.term[4])
+
+        view.apply(TerminalAppearance(theme: .dark, fontName: "Menlo", fontSize: 22))
+        XCTAssertGreaterThan(view.linkUnderlines.metrics.cell.width, metrics.cell.width, "a fonte cresceu")
+    }
+
+    func testUnderlinesCoverTheWholeTerminal() {
+        let view = makeView()
+        XCTAssertTrue(view.linkUnderlines.superview === view)
+        XCTAssertTrue(view.subviews.first === view.linkUnderlines, "por baixo do cursor e da barra de rolagem")
+        XCTAssertEqual(view.linkUnderlines.frame, view.bounds)
+        view.setFrameSize(NSSize(width: 900, height: 500))
+        XCTAssertEqual(view.linkUnderlines.frame, view.bounds)
+    }
+
+    func testUnderlinesAreRedoneWhenTheTerminalIsResized() {
+        let view = makeView()
+        view.getTerminal().feed(text: "https://example.com/" + String(repeating: "a", count: 40))
+        view.refreshLinkUnderlines()
+        XCTAssertEqual(view.linkUnderlines.spans, [LinkSpan(row: 0, columns: 0..<60)])
+        // Mais estreito, o texto muda de lugar, e o sublinhado acompanha na hora.
+        view.setFrameSize(NSSize(width: 300, height: 400))
+        XCTAssertLessThan(view.getTerminal().cols, 60)
+        XCTAssertNotEqual(view.linkUnderlines.spans, [LinkSpan(row: 0, columns: 0..<60)])
+        XCTAssertEqual(view.linkUnderlines.spans, TerminalLinks.spans(in: view.getTerminal()))
+    }
+
+    func testCheapReadingOfTheLinksHasNoWait() {
+        let view = makeView()
+        var now: TimeInterval = 100
+        view.uptime = { defer { now += 0.001 }; return now }
+        view.feed(text: "https://example.com/a")
+        view.refreshLinkUnderlines()
+        XCTAssertEqual(view.linkUnderlines.spans, [LinkSpan(row: 0, columns: 0..<21)])
+        view.feed(text: "b")
+        view.refreshLinkUnderlines()
+        XCTAssertEqual(view.linkUnderlines.spans, [LinkSpan(row: 0, columns: 0..<22)])
+    }
+
+    func testReadingOfTheLinksThatCostsTooMuchIsSpacedOut() {
+        let view = makeView()
+        // Deixa passar o redesenho que a criação da vista agenda. Daqui em diante o texto entra direto
+        // no emulador: nenhum redesenho fica agendado, e só o próprio terminal pode voltar a ler os links.
+        waitUntil(timeout: 0.1) { false }
+        var now: TimeInterval = 100, step: TimeInterval = 0.005
+        // Cada consulta ao relógio anda um passo: a leitura que consulta no começo e no fim custou um passo.
+        view.uptime = { defer { now += step }; return now }
+        view.getTerminal().feed(text: "https://example.com/a")
+        view.refreshLinkUnderlines()
+        XCTAssertEqual(view.linkUnderlines.spans, [LinkSpan(row: 0, columns: 0..<21)])
+
+        // Cedo demais: em vez de um sublinhado velho no lugar errado, nenhum.
+        view.getTerminal().feed(text: "b")
+        view.refreshLinkUnderlines()
+        XCTAssertEqual(view.linkUnderlines.spans, [])
+
+        // Passado o prazo ele volta sozinho, já com o texto novo.
+        now = 200
+        step = 0
+        XCTAssertTrue(waitUntil(timeout: 5) { view.linkUnderlines.spans == [LinkSpan(row: 0, columns: 0..<22)] })
     }
 
     func testClipboardReplyNeverReachesTheProcess() {

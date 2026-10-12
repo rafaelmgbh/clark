@@ -3,7 +3,7 @@ import ClarkCore
 import XCTest
 @testable import Clark
 
-/// Desenho de uma `PixelView` num bitmap próprio, com a origem em cima à esquerda.
+/// Desenho de uma vista num bitmap próprio, lido com a origem em cima à esquerda.
 struct RenderedImage: Equatable {
     let width: Int
     let height: Int
@@ -13,10 +13,30 @@ struct RenderedImage: Equatable {
     /// - Parameter dirty: desenha pelo `draw`, como o AppKit faz, pedindo só este retângulo.
     init(_ view: PixelView, width: Int, height: Int, dirty: NSRect? = nil, file: StaticString = #filePath,
          line: UInt = #line) {
-        self.width = width
-        self.height = height
         view.frame = NSRect(x: 0, y: 0, width: width, height: height)
         view.layoutSubtreeIfNeeded()
+        self.init(width: width, height: height, flipped: true, file: file, line: line) { context in
+            if let dirty {
+                view.draw(dirty)
+            } else {
+                view.render(context, width: width, height: height)
+            }
+        }
+    }
+
+    /// Desenho de uma vista comum, com a origem embaixo, pelo `draw` dela.
+    init(drawing view: NSView, width: Int, height: Int, file: StaticString = #filePath, line: UInt = #line) {
+        view.frame = NSRect(x: 0, y: 0, width: width, height: height)
+        view.layoutSubtreeIfNeeded()
+        self.init(width: width, height: height, flipped: false, file: file, line: line) { _ in
+            view.draw(view.bounds)
+        }
+    }
+
+    private init(width: Int, height: Int, flipped: Bool, file: StaticString, line: UInt,
+                 draw: (CGContext) -> Void) {
+        self.width = width
+        self.height = height
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
                                       space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
@@ -25,16 +45,14 @@ struct RenderedImage: Equatable {
             bytesPerRow = 0
             return
         }
-        context.translateBy(x: 0, y: CGFloat(height))
-        context.scaleBy(x: 1, y: -1)
+        if flipped {
+            context.translateBy(x: 0, y: CGFloat(height))
+            context.scaleBy(x: 1, y: -1)
+        }
         context.setShouldAntialias(false)
         let previous = NSGraphicsContext.current
-        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
-        if let dirty {
-            view.draw(dirty)
-        } else {
-            view.render(context, width: width, height: height)
-        }
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: flipped)
+        draw(context)
         NSGraphicsContext.current = previous
         bytesPerRow = context.bytesPerRow
         if let data = context.data {
