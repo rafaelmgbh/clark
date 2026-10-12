@@ -14,6 +14,7 @@ usa a tela, o teclado e a conta do `claude`. Nada aqui é automatizado.
 | Coluna de arquivos alterados (commit seguinte ao `7cc4de7`) | 500 testes verdes, 78 mutações mortas, imagens renderizadas nos testes | nunca |
 | Aviso de controle remoto (commit seguinte ao `9bdf093`) | 515 testes verdes, 26 mutações mortas, imagem renderizada nos testes, campo do arquivo de sessão conferido em sessões reais | nunca |
 | Cabeçalho em etiquetas, `Mais usados` no menu e links sublinhados (os três commits seguintes ao do aviso de controle remoto) | 580 testes verdes, 102 mutações mortas (30 do cabeçalho, 24 do menu, 48 dos links), imagens renderizadas nos testes, custo da leitura dos links medido no build otimizado | nunca |
+| Agente em segundo plano não dispara o aviso de agente pronto (correção do aviso falso) | 592 testes verdes, o aviso falso reproduzido em teste antes da correção, a correção ingênua (que atrasaria o aviso de verdade) morta por dois testes, `status` do arquivo de sessão conferido numa sessão real com agentes em segundo plano | nunca |
 | Ícone do dragão (`7fa1ec6`) | coberto pelos testes | nunca |
 | Núcleo do M1 (`80cb7e8`) | coberto pelos testes | em uso, mas o roteiro da Task 15 do plano nunca foi rodado inteiro |
 | `Tests/packaging.sh` depois do diff | não rodou: exige o CLARK fechado | não se aplica |
@@ -357,6 +358,17 @@ Estes passos pedem o [AiUsageBar](https://github.com/rafaelmgbh/ai-usage-bar) ro
   ficar para trás nem aparecer debaixo de outro texto. Selecionar e copiar um endereço sublinhado
   funciona como antes.
 
+- [ ] **D14. Agente em segundo plano não avisa antes da hora.** Com outro app na frente, peça num
+  agente: `dispare um agente em segundo plano que espere um minuto e me devolva o controle`.
+  Esperado: o turno acaba, o rodapé do Claude Code mostra o agente em segundo plano, e o card do
+  CLARK continua em `WORKING`, sem `DONE!` e sem notificação, mesmo com a tela parada. Quando o
+  agente em segundo plano termina, o Claude retoma o turno, e só no fim dele vêm o `DONE!` e a
+  notificação, uma vez só.
+
+- [ ] **D15. Pedido de permissão ainda avisa.** Com outro app na frente, peça num agente sem
+  `SEM PERMISSOES` algo que exija aprovação, como editar um arquivo. Esperado: quando o Claude Code
+  para no pedido de permissão, o card vai a `DONE!` e a notificação chega, como antes.
+
 ## E. Depois do teste
 
 - [ ] **E1. `Tests/packaging.sh`.** Com o CLARK fechado (⌘Q), de dentro de `mac/`:
@@ -397,6 +409,8 @@ E no que veio depois, também sem consulta:
 - O medidor de consumo lê o arquivo do AiUsageBar, sem rede e sem credencial no CLARK; os limites
   por modelo ficam de fora.
 - `SHELL` é um estado próprio, em ciano e com os pontos andando, e conta em `WORKING` na barra.
+- Com agente em segundo plano trabalhando, o agente fica em `WORKING` e o aviso só vem quando a
+  sessão desocupa. Com comando em segundo plano (`SHELL`), o aviso do fim do turno continua.
 - A faixa some na primeira tecla, e não fica guardada para rever.
 - Card da lista lateral mais alto (104 px), com o projeto numa linha própria.
 - Na coluna de arquivos alterados: em painel estreito o clique no resumo abre a janela do diff, e a

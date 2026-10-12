@@ -895,6 +895,71 @@ final class MainWindowControllerTests: XCTestCase {
         XCTAssertEqual(pane.state, .shell)
     }
 
+    /// Turno encerrado com agente em segundo plano: a tela para, mas o Claude Code segue dizendo `busy`.
+    func testTurnThatLeavesAgentsRunningDoesNotNotifyUntilTheSessionIsFree() {
+        let controller = fixture.started(agents: 1, claude: fixture.fakeClaude("read x"))
+        controller.isAppActive = { false }
+        controller.isWindowKey = { false }
+        let pane = controller.panes[0]
+        fixture.now += 5
+        controller.tick()
+        XCTAssertEqual(pane.state, .idle)
+
+        session(of: pane, status: "busy")
+        work(pane, in: controller, seconds: 4)
+        XCTAssertEqual(pane.state, .working)
+        XCTAssertEqual(fixture.notifier.done, [])
+
+        // O rodapé redesenha os contadores dos agentes e para de novo: segue sem aviso.
+        pane.terminal.onOutput?()
+        controller.tick()
+        fixture.now += 3
+        pane.terminal.onOutput?()
+        controller.tick()
+        fixture.now += 1.5
+        controller.tick()
+        XCTAssertEqual(pane.state, .working)
+        XCTAssertEqual(fixture.notifier.done, [])
+
+        // Os agentes acabaram e o turno fechou: o aviso sai na releitura seguinte.
+        session(of: pane, status: "idle")
+        fixture.now += AgentPaneView.activityInterval
+        controller.tick()
+        XCTAssertEqual(pane.state, .done)
+        XCTAssertEqual(fixture.notifier.done, ["AGENT 1"])
+    }
+
+    /// O aviso de verdade não espera a vez da releitura: quando a tela para, o arquivo é lido na hora.
+    func testBusyReadJustBeforeTheTurnEndsDoesNotDelayTheNotification() {
+        let controller = fixture.started(agents: 1, claude: fixture.fakeClaude("read x"))
+        controller.isAppActive = { false }
+        controller.isWindowKey = { false }
+        let pane = controller.panes[0]
+        session(of: pane, status: "busy")
+        fixture.now += 5
+        controller.tick()
+
+        pane.terminal.onUserInput?()
+        fixture.now += 1
+        pane.terminal.onOutput?()
+        controller.tick()
+        for _ in 1...5 {
+            fixture.now += 0.6
+            pane.terminal.onOutput?()
+            controller.tick()
+        }
+        fixture.now += 0.6
+        controller.tick()
+        XCTAssertEqual(pane.state, .working)
+
+        // O `busy` acabou de ser lido; o turno acaba 0,6 s depois.
+        session(of: pane, status: "idle")
+        fixture.now += 0.6
+        controller.tick()
+        XCTAssertEqual(pane.state, .done)
+        XCTAssertEqual(fixture.notifier.done, ["AGENT 1"])
+    }
+
     func testAgentWithoutClaudeDoesNotLookForASessionFile() {
         let controller = fixture.started(agents: 1)
         let pane = controller.panes[0]

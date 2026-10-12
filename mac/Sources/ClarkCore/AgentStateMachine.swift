@@ -26,6 +26,9 @@ public struct AgentStateMachine: Sendable {
     public private(set) var hasInput = false
     /// O Claude Code diz que a sessão tem comando em segundo plano rodando.
     public private(set) var hasBackgroundShell = false
+    /// O Claude Code diz que a sessão segue ocupada: turno em andamento, ou turno encerrado com agente
+    /// em segundo plano ainda trabalhando.
+    public private(set) var isSessionBusy = false
     /// Momento da última saída que contou como atividade.
     public private(set) var lastChange = -Double.infinity
     private var spawnTime: Double
@@ -43,6 +46,7 @@ public struct AgentStateMachine: Sendable {
         spawnTime = now
         hasInput = false
         hasBackgroundShell = false
+        isSessionBusy = false
         workStart = nil
     }
 
@@ -85,7 +89,7 @@ public struct AgentStateMachine: Sendable {
     @discardableResult
     public mutating func tick(now: Double, watched: Bool) -> Bool {
         if state == .exited { return false }
-        if now - lastChange < Self.workingWindow {
+        if !isQuiet(now: now) {
             if state != .working {
                 state = .working
                 workStart = now
@@ -93,6 +97,9 @@ public struct AgentStateMachine: Sendable {
             return false
         }
         if state == .working {
+            // Tela parada com a sessão ocupada não é agente pronto: o turno não acabou, ou acabou e um
+            // agente em segundo plano segue trabalhando.
+            if isSessionBusy { return false }
             let worked = now - (workStart ?? now)
             workStart = nil
             if hasInput && worked > Self.minWork && !watched {
@@ -107,10 +114,20 @@ public struct AgentStateMachine: Sendable {
         return false
     }
 
+    /// A saída do terminal parou: daqui em diante o estado depende do que o Claude Code diz da sessão.
+    public func isQuiet(now: Double) -> Bool {
+        now - lastChange >= Self.workingWindow
+    }
+
     /// O que a saída do terminal não mostra: sobrou, ou não, comando rodando em segundo plano.
     public mutating func backgroundShell(_ running: Bool) {
         hasBackgroundShell = running
         if state == .idle || state == .shell { state = resting }
+    }
+
+    /// O que a saída do terminal não mostra: o Claude Code segue, ou não, ocupado com a sessão.
+    public mutating func sessionBusy(_ busy: Bool) {
+        isSessionBusy = busy
     }
 
     public mutating func exited() {

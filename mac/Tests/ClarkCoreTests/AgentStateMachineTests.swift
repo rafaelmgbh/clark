@@ -235,6 +235,49 @@ final class AgentStateMachineTests: XCTestCase {
         XCTAssertEqual(machine.state, .idle)
     }
 
+    // MARK: sessão ocupada
+
+    /// Turno encerrado com agente em segundo plano: a tela para, mas o Claude Code segue em `busy`.
+    func testQuietTerminalIsNotDoneWhileTheSessionIsBusy() {
+        var machine = idleMachine()
+        machine.userInput(now: 10)
+        machine.sessionBusy(true)
+        work(&machine, from: 10.5, to: 13.5)
+        XCTAssertFalse(machine.tick(now: 14.6, watched: false))
+        XCTAssertEqual(machine.state, .working)
+
+        // O rodapé volta a contar o tempo dos agentes e para de novo: ainda não é agente pronto.
+        work(&machine, from: 20, to: 23)
+        XCTAssertFalse(machine.tick(now: 24.1, watched: false))
+        XCTAssertEqual(machine.state, .working)
+
+        // A sessão desocupou com a tela parada: agora acabou.
+        machine.sessionBusy(false)
+        XCTAssertTrue(machine.tick(now: 24.2, watched: false))
+        XCTAssertEqual(machine.state, .done)
+    }
+
+    func testBusySessionKeepsAWatchedAgentWorking() {
+        var machine = idleMachine()
+        machine.userInput(now: 10)
+        machine.sessionBusy(true)
+        work(&machine, from: 10.5, to: 13.5, watched: true)
+        XCTAssertFalse(machine.tick(now: 14.6, watched: true))
+        XCTAssertEqual(machine.state, .working)
+
+        machine.sessionBusy(false)
+        XCTAssertFalse(machine.tick(now: 14.7, watched: true))
+        XCTAssertEqual(machine.state, .idle)
+    }
+
+    func testRespawnForgetsTheBusySession() {
+        var machine = idleMachine()
+        machine.sessionBusy(true)
+        machine.exited()
+        machine.spawned(now: 20)
+        XCTAssertFalse(machine.isSessionBusy)
+    }
+
     func testExitedIsFinalUntilRespawn() {
         var machine = idleMachine()
         machine.exited()

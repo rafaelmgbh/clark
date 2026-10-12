@@ -305,26 +305,28 @@ final class AgentPaneView: PixelView {
     /// Tique de 100 ms.
     func tick(now: Double) {
         let before = machine.state, remoteBefore = remoteControl
-        let notify = machine.tick(now: now, watched: delegate?.paneIsWatched(self) ?? false)
+        // Antes do tique da máquina: com a tela parada, quem decide é o que o Claude Code diz agora.
         refreshSession(now: now)
+        let notify = machine.tick(now: now, watched: delegate?.paneIsWatched(self) ?? false)
         if machine.state != before || remoteControl != remoteBefore { changed() }
         if notify { delegate?.paneNeedsAttention(self) }
         if StateLabel.isAnimated(machine.state) { header.time = now }
     }
 
-    /// Relê o que o Claude Code diz da sessão. Parado, o terminal não mostra se sobrou comando rodando
-    /// em segundo plano. Trabalhando, a saída do terminal basta para o estado, mas o controle remoto
-    /// só o arquivo conta: ele é relido no mesmo ritmo, sem mexer no estado.
+    /// Relê o que o Claude Code diz da sessão. Com a tela parada, o terminal não mostra se o turno
+    /// acabou, se sobrou comando rodando em segundo plano ou se um agente em segundo plano segue
+    /// trabalhando: o arquivo é lido na hora em que a saída para e, dali em diante, uma vez por
+    /// segundo. Com saída, o terminal basta para o estado, mas o controle remoto só o arquivo conta:
+    /// ele é relido no mesmo ritmo.
     private func refreshSession(now: Double) {
         guard let configDir = claudeConfigDir, machine.state != .exited else { return }
-        let stopped = [.idle, .shell, .done].contains(machine.state) && now - activityAt >= Self.activityInterval
-        guard stopped || now - remoteAt >= Self.activityInterval else { return }
+        let quiet = machine.isQuiet(now: now) && now - activityAt >= Self.activityInterval
+        guard quiet || now - remoteAt >= Self.activityInterval else { return }
         let report = SessionReport.read(configDir: configDir, pid: terminal.process.shellPid, since: spawnedAt)
-        if stopped {
-            activityAt = now
-            machine.backgroundShell(report?.activity == .shell)
-        }
+        if quiet { activityAt = now }
         remoteAt = now
+        machine.backgroundShell(report?.activity == .shell)
+        machine.sessionBusy(report?.activity == .busy)
         remoteControl = report?.remoteControl ?? false
     }
 
