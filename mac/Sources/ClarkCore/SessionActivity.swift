@@ -1,15 +1,28 @@
 import Foundation
 
-/// O que o Claude Code diz que uma sessão está fazendo, em `<config>/sessions/<pid>.json`.
+/// O que o Claude Code diz que uma sessão está fazendo.
 ///
 /// O terminal não conta tudo: com o turno encerrado e um comando rodando em segundo plano, a tela
-/// fica parada como a de um agente ocioso. O arquivo é um detalhe interno do Claude Code: se ele
-/// sumir ou mudar de formato, o CLARK volta a decidir só pela saída do terminal.
+/// fica parada como a de um agente ocioso.
 public enum SessionActivity: String, Equatable, Sendable {
     case busy
     case idle
     /// Turno encerrado, com comando em segundo plano ainda rodando.
     case shell
+}
+
+/// O que o CLARK tira de `<config>/sessions/<pid>.json`, o arquivo em que o Claude Code descreve a
+/// sessão de um processo.
+///
+/// O arquivo é um detalhe interno do Claude Code: se ele sumir ou mudar de formato, o CLARK volta a
+/// decidir o estado só pela saída do terminal e deixa de avisar do controle remoto.
+public struct SessionReport: Equatable, Sendable {
+    /// nil: o `status` gravado não é um que o CLARK conheça.
+    public var activity: SessionActivity?
+    /// O controle remoto (`/remote-control`) está ligado e a conversa pode seguir do celular ou do
+    /// navegador. Enquanto ele dura, o arquivo guarda o nome da sessão remota em `bridgeSessionId`;
+    /// ao desligar, o Claude Code grava `null` no lugar.
+    public var remoteControl: Bool
 
     /// Teto do que é lido do arquivo, que tem menos de 1 KiB.
     public static let maxBytes = 64 * 1024
@@ -18,10 +31,10 @@ public enum SessionActivity: String, Equatable, Sendable {
         "\(configDir)/sessions/\(pid).json"
     }
 
-    /// Estado da sessão do processo `pid`. nil se o arquivo não existe, não é o esperado ou sobrou de
-    /// um processo antigo que tinha o mesmo número.
+    /// O relato da sessão do processo `pid`. nil se o arquivo não existe, não é o esperado ou sobrou
+    /// de um processo antigo que tinha o mesmo número.
     /// - Parameter since: quando o processo abriu, em segundos desde 1970.
-    public static func read(configDir: String, pid: Int32, since: Double) -> SessionActivity? {
+    public static func read(configDir: String, pid: Int32, since: Double) -> SessionReport? {
         let path = path(configDir: configDir, pid: pid)
         var info = stat()
         guard stat(path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
@@ -29,12 +42,15 @@ public enum SessionActivity: String, Equatable, Sendable {
         guard modified >= since, let handle = FileHandle(forReadingAtPath: path) else { return nil }
         defer { try? handle.close() }
         guard let data = try? handle.read(upToCount: maxBytes + 1), data.count <= maxBytes else { return nil }
-        return SessionActivity(json: data, pid: pid)
+        return SessionReport(json: data, pid: pid)
     }
+}
 
+extension SessionReport {
     init?(json data: Data, pid: Int32) {
         guard let session = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              session["pid"] as? Int == Int(pid), let status = session["status"] as? String else { return nil }
-        self.init(rawValue: status)
+              session["pid"] as? Int == Int(pid) else { return nil }
+        activity = (session["status"] as? String).flatMap(SessionActivity.init(rawValue:))
+        remoteControl = (session["bridgeSessionId"] as? String).map { !$0.isEmpty } ?? false
     }
 }

@@ -16,6 +16,8 @@ struct AgentSnapshot: Equatable {
     var preview: [String] = []
     /// O que mudou no repositório da pasta. nil: sem leitura, fora de repositório ou sem mudança.
     var diff: DiffSummary? = nil
+    /// O controle remoto do Claude Code está ligado na sessão do agente.
+    var remoteControl = false
 }
 
 /// Cabeçalho do painel (`_draw_head` do original). O quadrado na cor da empresa ocupa o
@@ -83,6 +85,8 @@ final class AgentHeaderView: PixelView {
         var companyX = 0
         /// Vazio: sem empresa, igual ao projeto ou não coube.
         var company = ""
+        /// nil: controle remoto desligado ou o aviso não coube.
+        var remoteX: Int?
         /// nil: sem resumo do diff ou ele não coube.
         var badgeX: Int?
         var pathX = 0
@@ -117,8 +121,14 @@ final class AgentHeaderView: PixelView {
             x += PixelFont.textWidth(layout.project, scale: layout.projectScale) + 12
         }
 
-        // Depois do projeto: a empresa, o resumo do diff encostado na pílula se couber, e o caminho
-        // com o que sobrar. A empresa que tem o mesmo nome do projeto não se repete.
+        // Depois do projeto: o aviso do controle remoto encostado na pílula, a empresa, o resumo do
+        // diff antes do aviso e o caminho com o que sobrar. O aviso escolhe primeiro: a empresa e o
+        // caminho também estão no card, e o resumo do diff, no card e no menu.
+        if snapshot.remoteControl, right - RemoteBadge.width >= x {
+            layout.remoteX = right - RemoteBadge.width
+            right -= RemoteBadge.width + 10
+        }
+        // A empresa que tem o mesmo nome do projeto não se repete.
         let company = PixelFont.normalize(snapshot.company)
         let companyWidth = PixelFont.textWidth(company, scale: 1)
         if !company.isEmpty, company != project, right - x >= companyWidth {
@@ -161,6 +171,9 @@ final class AgentHeaderView: PixelView {
         }
         if let diff = snapshot.diff, let badgeX = layout.badgeX {
             DiffBadge.draw(context, diff, x: badgeX, y: (height - 7) / 2, theme: theme)
+        }
+        if let remoteX = layout.remoteX {
+            RemoteBadge.draw(context, x: remoteX, textY: (height - 7) / 2, theme: theme)
         }
         if layout.pathWidth > 60 {
             Pixel.mono(context, snapshot.path, layout.pathX, (height - 12) / 2, width: layout.pathWidth, size: 9,

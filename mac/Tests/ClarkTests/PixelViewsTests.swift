@@ -11,9 +11,26 @@ final class PixelViewsTests: XCTestCase {
 
     private func snapshot(_ state: AgentState = .idle, name: String = "AGENT 1", project: String = "PORTAL",
                           company: String = "ACME", path: String = "~/Projetos/acme", preview: [String] = [],
-                          diff: DiffSummary? = nil) -> AgentSnapshot {
+                          diff: DiffSummary? = nil, remoteControl: Bool = false) -> AgentSnapshot {
         AgentSnapshot(name: name, project: project, company: company, color: magenta, path: path, state: state,
-                      preview: preview, diff: diff)
+                      preview: preview, diff: diff, remoteControl: remoteControl)
+    }
+
+    /// A etiqueta `REMOTO` inteira, com o canto em (x, y): fundo azul e as letras na cor do fundo da janela.
+    private func assertRemoteTag(in image: RenderedImage, x: Int, y: Int, file: StaticString = #filePath,
+                                 line: UInt = #line) {
+        let blue = RemoteBadge.color(theme)
+        let letters = PixelFont.pixels("REMOTO")
+        XCTAssertFalse(letters.isEmpty, file: file, line: line)
+        for pixel in letters {
+            XCTAssertTrue(image.isColor(theme.bg, atX: x + 4 + pixel.x, y: y + 2 + pixel.y),
+                          "letra em (\(pixel.x), \(pixel.y))", file: file, line: line)
+        }
+        XCTAssertEqual(image.count(blue, x: x, y: y, width: RemoteBadge.width, height: RemoteBadge.height),
+                       RemoteBadge.width * RemoteBadge.height - letters.count, "fundo da etiqueta", file: file,
+                       line: line)
+        XCTAssertEqual(image.count(blue), RemoteBadge.width * RemoteBadge.height - letters.count,
+                       "azul só na etiqueta", file: file, line: line)
     }
 
     /// Clique no ponto (x, y) da view, contado de cima para baixo. O evento leva a coordenada
@@ -240,6 +257,65 @@ final class PixelViewsTests: XCTestCase {
         XCTAssertEqual(doubles, 1)
     }
 
+    func testHeaderShowsTheRemoteControlTagBesideThePill() {
+        XCTAssertEqual(RemoteBadge.width, PixelFont.textWidth("REMOTO", scale: 1) + 8)
+        let header = AgentHeaderView(snapshot: snapshot(.idle, remoteControl: true))
+        let image = RenderedImage(header, width: 600, height: AgentHeaderView.height)
+        assertRemoteTag(in: image, x: pillOrigin(width: 600).x - 10 - RemoteBadge.width, y: 9)
+
+        header.snapshot = snapshot(.idle)
+        let plain = RenderedImage(header, width: 600, height: AgentHeaderView.height)
+        XCTAssertEqual(plain.count(RemoteBadge.color(theme)), 0, "sem controle remoto, sem etiqueta")
+    }
+
+    func testHeaderPutsTheDiffSummaryBeforeTheRemoteControlTag() {
+        let diff = DiffSummary(files: 4, added: 12, removed: 3)
+        let header = AgentHeaderView(snapshot: snapshot(.idle, diff: diff, remoteControl: true))
+        let image = RenderedImage(header, width: 600, height: AgentHeaderView.height)
+        let tagX = pillOrigin(width: 600).x - 10 - RemoteBadge.width
+        let badgeX = tagX - 10 - DiffBadge.width(diff)
+        assertRemoteTag(in: image, x: tagX, y: 9)
+        XCTAssertGreaterThan(image.count(theme.green, x: badgeX, y: 11, width: PixelFont.textWidth("+12", scale: 1),
+                                         height: 7), 0, "+12 em verde")
+        XCTAssertEqual(image.count(theme.green, x: 0, y: 0, width: badgeX, height: 30), 0)
+        XCTAssertEqual(header.badgeRect, NSRect(x: badgeX - 5, y: 0, width: DiffBadge.width(diff) + 10,
+                                                height: AgentHeaderView.height), "o clique acompanha o resumo")
+    }
+
+    /// Apertou: sai o resumo do diff, que também está no menu e no card, e fica o aviso.
+    func testTightHeaderDropsTheDiffSummaryBeforeTheRemoteControlTag() {
+        let diff = DiffSummary(files: 4, added: 12, removed: 3)
+        let header = AgentHeaderView(snapshot: snapshot(.idle, diff: diff, remoteControl: true))
+        var onlyTheTag = 0
+        for width in stride(from: 600, through: 240, by: -4) {
+            let image = RenderedImage(header, width: width, height: AgentHeaderView.height)
+            let hasTag = image.count(RemoteBadge.color(theme)) > 0
+            if header.badgeRect != nil {
+                XCTAssertTrue(hasTag, "largura \(width): o resumo ficou e o aviso saiu")
+            } else if hasTag {
+                onlyTheTag += 1
+            }
+        }
+        XCTAssertGreaterThan(onlyTheTag, 0, "há larguras em que só o aviso cabe")
+    }
+
+    /// O nome e o projeto dizem qual é o agente: o aviso nunca tira espaço deles.
+    func testRemoteControlTagNeverShrinksTheNameOrTheProject() {
+        let plain = AgentHeaderView(snapshot: snapshot(.idle, project: "PORTAL DO CLIENTE"))
+        let remote = AgentHeaderView(snapshot: snapshot(.idle, project: "PORTAL DO CLIENTE", remoteControl: true))
+        var withTag = 0
+        for width in stride(from: 700, through: 200, by: -10) {
+            let off = RenderedImage(plain, width: width, height: AgentHeaderView.height)
+            let on = RenderedImage(remote, width: width, height: AgentHeaderView.height)
+            XCTAssertEqual(on.count(theme.ink), off.count(theme.ink), "nome na largura \(width)")
+            XCTAssertEqual(on.count(magenta), off.count(magenta), "projeto na largura \(width)")
+            if on.count(RemoteBadge.color(theme)) > 0 { withTag += 1 }
+        }
+        XCTAssertGreaterThan(withTag, 0)
+        let narrow = RenderedImage(remote, width: 240, height: AgentHeaderView.height)
+        XCTAssertEqual(narrow.count(RemoteBadge.color(theme)), 0, "no cabeçalho estreito o aviso fica só no card")
+    }
+
     func testHeaderTellsWhereTheDiffSummaryIs() {
         let diff = DiffSummary(files: 4, added: 12, removed: 3)
         let header = AgentHeaderView(snapshot: snapshot(.idle, diff: diff))
@@ -389,6 +465,31 @@ final class PixelViewsTests: XCTestCase {
         card.snapshot = snapshot(.idle)
         let plain = render(card)
         XCTAssertEqual(plain.count(theme.green) + plain.count(theme.red), 0, "sem mudanças, sem resumo")
+    }
+
+    func testCardShowsTheRemoteControlTagAtTheEndOfTheDetailLine() {
+        let card = AgentCardView(snapshot: snapshot(.idle, remoteControl: true))
+        let image = render(card)
+        assertRemoteTag(in: image, x: cardWidth - 8 - RemoteBadge.width, y: AgentCardView.detailY - 2)
+        XCTAssertGreaterThan(image.count(theme.dim, x: 14, y: AgentCardView.detailY, width: 23, height: 7), 0,
+                             "a empresa continua na linha")
+
+        card.snapshot = snapshot(.idle)
+        XCTAssertEqual(render(card).count(RemoteBadge.color(theme)), 0, "sem controle remoto, sem etiqueta")
+    }
+
+    func testCardPutsTheDiffSummaryBeforeTheRemoteControlTag() {
+        let diff = DiffSummary(files: 1234, added: 98_765, removed: 43_210)
+        let card = AgentCardView(snapshot: snapshot(.idle, diff: diff, remoteControl: true))
+        let tagX = cardWidth - 8 - RemoteBadge.width
+        let badgeX = tagX - 8 - DiffBadge.width(diff)
+        let y = AgentCardView.detailY
+        let image = render(card)
+        assertRemoteTag(in: image, x: tagX, y: y - 2)
+        XCTAssertGreaterThan(image.count(theme.green, x: badgeX, y: y, width: 40, height: 7), 0, "+98765 em verde")
+        XCTAssertEqual(image.count(theme.green, x: 0, y: 0, width: badgeX, height: AgentCardView.height), 0)
+        XCTAssertEqual(image.count(theme.red, x: tagX - 8, y: 0, width: cardWidth, height: AgentCardView.height), 0,
+                       "o resumo termina antes da etiqueta")
     }
 
     func testCardWithBigNumbersStillFitsTheSummary() {

@@ -12,6 +12,7 @@ usa a tela, o teclado e a conta do `claude`. Nada aqui é automatizado.
 | Início no `GLOBAL`, menu por empresa, projeto no cabeçalho, apelidos e última sessão (commit seguinte ao `ab24420`) | 391 testes verdes, 7 mutações mortas, imagens renderizadas nos testes | nunca |
 | Menu com grupos por pasta e worktrees à parte, medidor de consumo na barra e estado `SHELL` (commit seguinte ao `721b889`) | 451 testes verdes, 30 mutações mortas (13 do menu e do medidor, 17 do `SHELL`), menu conferido contra as pastas reais, arquivo de sessão conferido num agente real | nunca |
 | Coluna de arquivos alterados (commit seguinte ao `7cc4de7`) | 500 testes verdes, 78 mutações mortas, imagens renderizadas nos testes | nunca |
+| Aviso de controle remoto (commit seguinte ao `9bdf093`) | 515 testes verdes, 26 mutações mortas, imagem renderizada nos testes, campo do arquivo de sessão conferido em sessões reais | nunca |
 | Ícone do dragão (`7fa1ec6`) | coberto pelos testes | nunca |
 | Núcleo do M1 (`80cb7e8`) | coberto pelos testes | em uso, mas o roteiro da Task 15 do plano nunca foi rodado inteiro |
 | `Tests/packaging.sh` depois do diff | não rodou: exige o CLARK fechado | não se aplica |
@@ -282,7 +283,7 @@ com 17 passos. Nenhum deles foi registrado como rodado. Os que mais pesam, por o
 
 - [ ] **C6. Os outros passos da Task 15,** na ordem do plano.
 
-## D. Consumo do plano, aviso de fim de turno e estado SHELL
+## D. Consumo do plano, aviso de fim de turno, estado SHELL e controle remoto
 
 Estes passos pedem o [AiUsageBar](https://github.com/rafaelmgbh/ai-usage-bar) rodando no mesmo Mac.
 
@@ -318,6 +319,22 @@ Estes passos pedem o [AiUsageBar](https://github.com/rafaelmgbh/ai-usage-bar) ro
 - [ ] **D8. SHELL e o aviso.** Repita o D7 com outro app na frente. Esperado: o aviso de fim de
   turno chega como sempre e o card fica em `DONE!`; ao voltar para o agente, ele passa a `SHELL...`
   enquanto o `sleep` roda.
+
+- [ ] **D9. Controle remoto.** Num agente, digite `/remote-control`. Esperado: em até um segundo,
+  a etiqueta azul `REMOTO` aparece ao lado do estado no cabeçalho e na linha de detalhe do card
+  daquele agente, e só dele; o estado do agente não muda por causa dela. Digite `/remote-control`
+  de novo e desconecte. Esperado: a etiqueta some em até um segundo.
+
+- [ ] **D10. REMOTO enquanto trabalha e no aperto.** Com o controle remoto ligado, mande do celular
+  ou de claude.ai/code um pedido demorado. Esperado: a etiqueta continua durante o `WORKING`.
+  Passe para a grade com vários agentes, ou estreite a janela aos poucos. Esperado: no cabeçalho
+  some primeiro o resumo do diff e só depois a etiqueta; o nome e o projeto não encolhem por
+  causa dela.
+
+- [ ] **D11. REMOTO e GAME OVER.** Com o controle remoto ligado, saia do Claude (`/exit`).
+  Esperado: `GAME OVER` sem a etiqueta. Enter reabre a conversa, e a etiqueta só volta se o
+  controle remoto voltar (com `Enable Remote Control for all sessions` ligado no `/config`, ele
+  volta sozinho).
 
 ## E. Depois do teste
 
@@ -364,6 +381,9 @@ E no que veio depois, também sem consulta:
 - Na coluna de arquivos alterados: em painel estreito o clique no resumo abre a janela do diff, e a
   coluna pede 320 pontos de terminal; o menu do cabeçalho tem `Arquivos alterados`; arquivo da raiz
   fica numa linha mais baixa, sem a pasta; a coluna não é lembrada ao reabrir o app.
+
+- No aviso de controle remoto: a palavra `REMOTO` em azul, no cabeçalho e no card; sem clique e
+  sem o endereço da sessão; no cabeçalho apertado o resumo do diff sai antes dela.
 
 A ampliação dos nomes de segredo com `*_PASS`, `*_PWD` e `*_PAT` foi aprovada e entrou em
 2026-10-12. Se um agente parar de autenticar depois dela, o menu do agente mostra o nome removido,

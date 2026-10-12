@@ -177,6 +177,13 @@ Dois cliques no cabeçalho do agente renomeiam. O botão `[ ]` do cabeçalho dá
 A faixa vermelha `SEM PERMISSOES` aparece no agente aberto com
 `--dangerously-skip-permissions` ou `--permission-mode bypassPermissions`.
 
+A etiqueta azul `REMOTO`, ao lado do estado no cabeçalho e na linha de detalhe do card, avisa que
+o controle remoto do Claude Code (`/remote-control`) está ligado naquele agente: a conversa também
+pode ser tocada do celular ou de claude.ai/code. Ela aparece e some em até um segundo depois de
+ligar ou desligar. No cabeçalho apertado sai primeiro o resumo do diff; sem espaço nem para ela, o
+aviso fica só no card. O CLARK lê isso de um arquivo interno do Claude Code: se o formato mudar, a
+etiqueta deixa de aparecer e nada mais muda.
+
 ## Empresas
 
 Sem configuração, a primeira pasta abaixo de `~/Projetos` é a empresa do agente:

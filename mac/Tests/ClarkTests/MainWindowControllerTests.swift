@@ -802,11 +802,14 @@ final class MainWindowControllerTests: XCTestCase {
     // MARK: comando em segundo plano
 
     /// Grava o arquivo em que o Claude Code diz o que a sessão do agente está fazendo.
+    /// - Parameter bridge: nome da sessão remota, que o arquivo guarda enquanto o controle remoto dura.
     @discardableResult
-    private func session(of pane: AgentPaneView, status: String, configDir: String = ".claude") -> String {
+    private func session(of pane: AgentPaneView, status: String, configDir: String = ".claude",
+                         bridge: String? = nil) -> String {
         let pid = pane.terminal.process.shellPid
+        let remote = bridge.map { ", \"bridgeSessionId\": \"\($0)\"" } ?? ""
         return fixture.temp.write("\(configDir)/sessions/\(pid).json",
-                                  "{\"pid\": \(pid), \"kind\": \"interactive\", \"status\": \"\(status)\"}")
+                                  "{\"pid\": \(pid), \"kind\": \"interactive\", \"status\": \"\(status)\"\(remote)}")
     }
 
     func testAgentWithAShellInTheBackgroundShowsShellInsteadOfIdle() {
@@ -875,21 +878,131 @@ final class MainWindowControllerTests: XCTestCase {
     func testAgentWithoutClaudeDoesNotLookForASessionFile() {
         let controller = fixture.started(agents: 1)
         let pane = controller.panes[0]
-        session(of: pane, status: "shell")
+        session(of: pane, status: "shell", bridge: "session_01AbC")
         fixture.now += 5
         controller.tick()
         XCTAssertEqual(pane.state, .idle)
+        XCTAssertFalse(pane.snapshot.remoteControl)
     }
 
     func testSessionFileLeftByAnOlderProcessIsIgnored() throws {
         let controller = fixture.started(agents: 1, claude: fixture.fakeClaude("read x"))
         let pane = controller.panes[0]
-        let path = session(of: pane, status: "shell")
+        let path = session(of: pane, status: "shell", bridge: "session_01AbC")
         try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -3600)],
                                               ofItemAtPath: path)
         fixture.now += 5
         controller.tick()
         XCTAssertEqual(pane.state, .idle)
+        XCTAssertFalse(pane.snapshot.remoteControl)
+    }
+
+    // MARK: controle remoto
+
+    func testAgentWithRemoteControlOnSaysSoInTheHeaderAndInTheCard() throws {
+        let controller = fixture.started(agents: 1, claude: fixture.fakeClaude("read x"))
+        let pane = controller.panes[0]
+        fixture.now += 5
+        controller.tick()
+        XCTAssertFalse(pane.header.snapshot.remoteControl)
+        XCTAssertFalse(controller.sidebar.cards[0].snapshot.remoteControl)
+
+        let path = session(of: pane, status: "idle", bridge: "session_01AbC")
+        fixture.now += AgentPaneView.activityInterval
+        controller.tick()
+        XCTAssertTrue(pane.header.snapshot.remoteControl)
+        XCTAssertTrue(controller.sidebar.cards[0].snapshot.remoteControl)
+        XCTAssertEqual(pane.state, .idle, "o controle remoto não é estado do agente")
+
+        // Desligado no Claude Code, o aviso some na leitura seguinte.
+        session(of: pane, status: "idle")
+        fixture.now += AgentPaneView.activityInterval
+        controller.tick()
+        XCTAssertFalse(pane.header.snapshot.remoteControl)
+        XCTAssertFalse(controller.sidebar.cards[0].snapshot.remoteControl)
+
+        // Sem o arquivo ninguém diz que o controle remoto está ligado.
+        session(of: pane, status: "idle", bridge: "session_01AbC")
+        fixture.now += AgentPaneView.activityInterval
+        controller.tick()
+        XCTAssertTrue(pane.header.snapshot.remoteControl)
+        try FileManager.default.removeItem(atPath: path)
+        fixture.now += AgentPaneView.activityInterval
+        controller.tick()
+        XCTAssertFalse(pane.header.snapshot.remoteControl)
+    }
+
+    /// Trabalhando, o estado sai do terminal, mas o controle remoto só o arquivo conta.
+    func testRemoteControlIsRereadOncePerSecondWhileTheAgentWorks() {
+        let controller = fixture.started(agents: 1, claude: fixture.fakeClaude("read x"))
+        let pane = controller.panes[0]
+        let step = { (seconds: Double) in
+            self.fixture.now += seconds
+            pane.terminal.onOutput?()
+            controller.tick()
+            XCTAssertEqual(pane.state, .working)
+        }
+        pane.terminal.onUserInput?()
+        step(1)
+        XCTAssertFalse(pane.snapshot.remoteControl)
+
+        session(of: pane, status: "busy", bridge: "session_01AbC")
+        step(AgentPaneView.activityInterval)
+        XCTAssertTrue(pane.header.snapshot.remoteControl)
+        XCTAssertTrue(controller.sidebar.cards[0].snapshot.remoteControl)
+
+        session(of: pane, status: "busy")
+        step(AgentPaneView.activityInterval / 2)
+        XCTAssertTrue(pane.header.snapshot.remoteControl, "o arquivo não é relido a cada tique")
+        step(AgentPaneView.activityInterval / 2)
+        XCTAssertFalse(pane.header.snapshot.remoteControl)
+        XCTAssertFalse(controller.sidebar.cards[0].snapshot.remoteControl)
+    }
+
+    /// O SHELL não espera a vez do controle remoto: ao fim do turno o arquivo é lido na hora.
+    func testReadingRemoteControlWhileWorkingDoesNotDelayTheShellState() {
+        let controller = fixture.started(agents: 1, claude: fixture.fakeClaude("read x"))
+        let pane = controller.panes[0]
+        session(of: pane, status: "busy", bridge: "session_01AbC")
+        fixture.now += 5
+        controller.tick()
+
+        pane.terminal.onUserInput?()
+        fixture.now += 1
+        pane.terminal.onOutput?()
+        controller.tick()
+        fixture.now += 0.6
+        pane.terminal.onOutput?()
+        controller.tick()
+        fixture.now += 0.6
+        controller.tick()
+        XCTAssertEqual(pane.state, .working)
+        XCTAssertTrue(pane.snapshot.remoteControl)
+
+        // O controle remoto acabou de ser lido; o turno acaba 0,6 s depois, com um comando rodando.
+        session(of: pane, status: "shell", bridge: "session_01AbC")
+        fixture.now += 0.6
+        controller.tick()
+        XCTAssertEqual(pane.state, .shell)
+        XCTAssertTrue(pane.snapshot.remoteControl)
+    }
+
+    /// Morto à força, o processo deixa o arquivo para trás com o controle remoto ainda anotado.
+    func testAgentInGameOverIsNotRemoteAnymore() {
+        let controller = fixture.started(agents: 1, claude: fixture.fakeClaude("read x"))
+        let pane = controller.panes[0]
+        session(of: pane, status: "idle", bridge: "session_01AbC")
+        fixture.now += 5
+        controller.tick()
+        XCTAssertTrue(pane.header.snapshot.remoteControl)
+
+        kill(pane.terminal.process.shellPid, SIGKILL)
+        XCTAssertTrue(waitUntil { pane.state == .exited })
+        XCTAssertFalse(pane.header.snapshot.remoteControl)
+        XCTAssertFalse(controller.sidebar.cards[0].snapshot.remoteControl)
+        fixture.now += AgentPaneView.activityInterval
+        controller.tick()
+        XCTAssertFalse(pane.header.snapshot.remoteControl, "em GAME OVER o arquivo que sobrou não é lido")
     }
 
     func testSessionFileComesFromTheConfigFolderOfTheAgent() {

@@ -6,7 +6,7 @@ final class AgentCardView: PixelView {
     static let height = 104
     /// Linha do estado e do projeto.
     static let projectY = 30
-    /// Linha da empresa, do caminho e do diff.
+    /// Linha da empresa, do caminho, do diff e do aviso do controle remoto.
     static let detailY = 52
     /// Primeira das duas linhas da prévia do terminal.
     static let previewY = 66
@@ -120,13 +120,18 @@ final class AgentCardView: PixelView {
                        Self.projectY + (scale == 2 ? 0 : 4), scale: scale, snapshot.color)
         }
 
-        // Terceira linha: a empresa, o caminho e, na ponta direita, o resumo do diff.
+        // Terceira linha: a empresa, o caminho e, na ponta direita, o resumo do diff e o aviso do
+        // controle remoto.
         var pathX = x
         let company = PixelFont.normalize(snapshot.company)
         let companyWidth = PixelFont.textWidth(company, scale: 1)
         if !company.isEmpty, company != project, pathX + companyWidth < limit {
             Pixel.text(context, company, pathX, Self.detailY, scale: 1, theme.dim)
             pathX += companyWidth + 8
+        }
+        if snapshot.remoteControl, limit - RemoteBadge.width > pathX {
+            RemoteBadge.draw(context, x: limit - RemoteBadge.width, textY: Self.detailY, theme: theme)
+            limit -= RemoteBadge.width + 8
         }
         if let diff = snapshot.diff {
             let badgeWidth = DiffBadge.width(diff)

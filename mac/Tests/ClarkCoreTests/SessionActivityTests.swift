@@ -13,12 +13,16 @@ final class SessionActivityTests: XCTestCase {
         temp.write("sessions/\(filePid ?? pid).json", body)
     }
 
+    private func report(since: Double? = nil) -> SessionReport? {
+        SessionReport.read(configDir: temp.path, pid: pid, since: since ?? spawned)
+    }
+
     private func read(since: Double? = nil) -> SessionActivity? {
-        SessionActivity.read(configDir: temp.path, pid: pid, since: since ?? spawned)
+        report(since: since)?.activity
     }
 
     func testSessionFileIsNamedAfterTheProcess() {
-        XCTAssertEqual(SessionActivity.path(configDir: "/home/.claude", pid: 4242), "/home/.claude/sessions/4242.json")
+        XCTAssertEqual(SessionReport.path(configDir: "/home/.claude", pid: 4242), "/home/.claude/sessions/4242.json")
     }
 
     func testReadsWhatTheSessionIsDoing() {
@@ -76,7 +80,7 @@ final class SessionActivityTests: XCTestCase {
         let done = DispatchSemaphore(value: 0)
         let configDir = temp.path, pid = pid, since = spawned
         DispatchQueue.global().async {
-            answer.value = SessionActivity.read(configDir: configDir, pid: pid, since: since)
+            answer.value = SessionReport.read(configDir: configDir, pid: pid, since: since)
             done.signal()
         }
         if done.wait(timeout: .now() + 2) == .timedOut {
@@ -89,15 +93,49 @@ final class SessionActivityTests: XCTestCase {
     }
 
     func testHugeFileIsNotRead() {
-        let padding = String(repeating: " ", count: SessionActivity.maxBytes)
+        let padding = String(repeating: " ", count: SessionReport.maxBytes)
         session(#"{"pid": 4242, "status": "shell"}"# + padding)
         XCTAssertNil(read())
         session(#"{"pid": 4242, "status": "shell"}"# + String(repeating: " ", count: 1024))
         XCTAssertEqual(read(), .shell)
     }
+
+    // MARK: controle remoto
+
+    func testRemoteControlIsOnWhileTheSessionNamesItsBridge() {
+        session(#"{"pid": 4242, "status": "busy", "bridgeSessionId": "session_01AbC"}"#)
+        XCTAssertEqual(report(), SessionReport(activity: .busy, remoteControl: true))
+        session(#"{"pid": 4242, "status": "busy"}"#)
+        XCTAssertEqual(report(), SessionReport(activity: .busy, remoteControl: false))
+    }
+
+    /// Ao desligar o controle remoto, o Claude Code grava `null` no lugar do nome.
+    func testBridgeThatIsNotANameMeansRemoteControlOff() {
+        for bridge in ["null", #""""#, "7", "true", #"["session_01AbC"]"#, #"{"id": "session_01AbC"}"#] {
+            session(#"{"pid": 4242, "status": "idle", "bridgeSessionId": \#(bridge)}"#)
+            XCTAssertEqual(report(), SessionReport(activity: .idle, remoteControl: false), bridge)
+        }
+    }
+
+    func testRemoteControlDoesNotDependOnAStatusClarkKnows() {
+        for body in [#"{"pid": 4242, "status": "napping", "bridgeSessionId": "session_01AbC"}"#,
+                     #"{"pid": 4242, "bridgeSessionId": "session_01AbC"}"#] {
+            session(body)
+            XCTAssertEqual(report(), SessionReport(activity: nil, remoteControl: true), body)
+        }
+    }
+
+    func testRemoteControlOfAnotherProcessOrOfALeftoverFileIsNotRead() throws {
+        session(#"{"pid": 7, "status": "idle", "bridgeSessionId": "session_01AbC"}"#)
+        XCTAssertNil(report())
+        let path = session(#"{"pid": 4242, "status": "idle", "bridgeSessionId": "session_01AbC"}"#)
+        let written = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date)
+        XCTAssertNil(report(since: written.timeIntervalSince1970 + 1))
+        XCTAssertEqual(report(since: written.timeIntervalSince1970 - 1)?.remoteControl, true)
+    }
 }
 
 /// Resposta de uma leitura feita em outra linha de execução; o semáforo do teste ordena o acesso.
 private final class Answer: @unchecked Sendable {
-    var value: SessionActivity? = .shell
+    var value: SessionReport? = SessionReport(activity: .shell, remoteControl: true)
 }

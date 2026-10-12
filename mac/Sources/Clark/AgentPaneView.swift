@@ -104,6 +104,8 @@ final class AgentPaneView: PixelView {
     /// Nomes das variáveis que a política de ambiente tirou deste agente. Nunca os valores.
     private(set) var removedVariables: [String] = []
     private(set) var bypassesPermissions = false
+    /// O controle remoto do Claude Code está ligado na sessão deste agente.
+    private(set) var remoteControl = false
     /// O `claude` abriu sem conversa para retomar. Só aí o resumo da última sessão interessa.
     private(set) var startedNewConversation = false
     /// O que mudou no repositório da pasta do agente.
@@ -121,10 +123,11 @@ final class AgentPaneView: PixelView {
     private let closeButton = PixelButton(title: "X", style: .miniClose, toolTip: "Fechar (⌘W)")
     private let launch: AgentLaunch
     private var terminalAppearance: TerminalAppearance
-    /// De quanto em quanto tempo o agente parado relê o que o Claude Code diz da sessão.
+    /// De quanto em quanto tempo o agente relê o que o Claude Code diz da sessão.
     static let activityInterval = 1.0
     private let clock: () -> Double
     private var activityAt = -Double.infinity
+    private var remoteAt = -Double.infinity
     /// Quando o processo abriu, em segundos desde 1970. Arquivo de sessão mais velho é de outro processo.
     private var spawnedAt = 0.0
     private var previewAt = -Double.infinity
@@ -142,7 +145,7 @@ final class AgentPaneView: PixelView {
     var snapshot: AgentSnapshot {
         AgentSnapshot(name: name, project: project, company: isGlobal ? "" : company.name, color: color,
                       path: PathTools.short(directory, home: launch.home), state: machine.state, preview: preview,
-                      diff: diff.summary)
+                      diff: diff.summary, remoteControl: remoteControl)
     }
 
     /// - Parameter nicknames: caminho -> apelido, como está no `config.json`.
@@ -275,6 +278,8 @@ final class AgentPaneView: PixelView {
         terminal.onExit = { [weak self] _ in
             guard let self else { return }
             self.machine.exited()
+            // Morto à força, o processo deixa o arquivo de sessão para trás: quem saiu não é remoto.
+            self.remoteControl = false
             self.terminal.feed(text: Self.gameOver)
             self.changed()
         }
@@ -297,22 +302,28 @@ final class AgentPaneView: PixelView {
 
     /// Tique de 100 ms.
     func tick(now: Double) {
-        let before = machine.state
+        let before = machine.state, remoteBefore = remoteControl
         let notify = machine.tick(now: now, watched: delegate?.paneIsWatched(self) ?? false)
-        refreshActivity(now: now)
-        if machine.state != before { changed() }
+        refreshSession(now: now)
+        if machine.state != before || remoteControl != remoteBefore { changed() }
         if notify { delegate?.paneNeedsAttention(self) }
         if StateLabel.isAnimated(machine.state) { header.time = now }
     }
 
-    /// Parado, o terminal não mostra se sobrou comando rodando em segundo plano: quem diz é o Claude Code.
-    /// Trabalhando, a saída do terminal basta e o arquivo nem é lido.
-    private func refreshActivity(now: Double) {
-        guard let configDir = claudeConfigDir, [.idle, .shell, .done].contains(machine.state),
-              now - activityAt >= Self.activityInterval else { return }
-        activityAt = now
-        let activity = SessionActivity.read(configDir: configDir, pid: terminal.process.shellPid, since: spawnedAt)
-        machine.backgroundShell(activity == .shell)
+    /// Relê o que o Claude Code diz da sessão. Parado, o terminal não mostra se sobrou comando rodando
+    /// em segundo plano. Trabalhando, a saída do terminal basta para o estado, mas o controle remoto
+    /// só o arquivo conta: ele é relido no mesmo ritmo, sem mexer no estado.
+    private func refreshSession(now: Double) {
+        guard let configDir = claudeConfigDir, machine.state != .exited else { return }
+        let stopped = [.idle, .shell, .done].contains(machine.state) && now - activityAt >= Self.activityInterval
+        guard stopped || now - remoteAt >= Self.activityInterval else { return }
+        let report = SessionReport.read(configDir: configDir, pid: terminal.process.shellPid, since: spawnedAt)
+        if stopped {
+            activityAt = now
+            machine.backgroundShell(report?.activity == .shell)
+        }
+        remoteAt = now
+        remoteControl = report?.remoteControl ?? false
     }
 
     /// O painel ganhou o foco do teclado.

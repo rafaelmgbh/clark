@@ -68,7 +68,7 @@ mac/
 | `CompanyResolver` | Caminho → empresa (nome, cor, `env_allow`). | `companies.json` |
 | `EnvPolicy` | Ambiente base + empresa → ambiente do agente e lista dos nomes removidos. | `CompanyResolver` |
 | `AgentStateMachine` | Estados BOOT, WORKING, IDLE, SHELL, DONE, EXITED a partir de eventos com relógio injetado. | nada |
-| `SessionActivity` | O que o Claude Code diz que a sessão de um processo está fazendo (`busy`, `idle`, `shell`), lido do arquivo de sessão dele. | sistema de arquivos |
+| `SessionReport`, `SessionActivity` | O que o Claude Code diz da sessão de um processo, lido do arquivo de sessão dele: o que ela está fazendo (`busy`, `idle`, `shell`) e se o controle remoto está ligado. | sistema de arquivos |
 | `SessionLocator` | Decide entre `--resume` e `--session-id`; valida UUID. | sistema de arquivos |
 | `ClaudeCommand` | Monta o argv do agente; detecta flags de sessão e de permissão perigosa nos argumentos extras. | `SessionLocator` |
 | `QueueStatus` | Decodifica o JSON de `fila.py status --json` e de `runstate.py find` e `report`. | Foundation |
@@ -93,6 +93,7 @@ mac/
 | `DiffMonitor` | Lê o diff da pasta de um agente fora da thread principal e guarda o último resultado. |
 | `DiffBadge`, `DiffWindowController` | Resumo do diff no cabeçalho e no card; janela única com a lista de arquivos e o diff do escolhido. |
 | `ChangedFilesView` | Coluna dos arquivos alterados ao lado do terminal do agente; o clique num arquivo abre a janela do diff nele. |
+| `RemoteBadge` | Etiqueta `REMOTO` no cabeçalho e no card do agente que está com o controle remoto do Claude Code ligado. |
 | `QueueWatcher` | Observa os arquivos de estado e chama os helpers das skills quando mudam. |
 | `QueuePanelView` | Desenha a fila e o botão de abrir agente na worktree. |
 | `SplashView`, `DragonLayer`, `PixelRenderer` | Splash animada, dragões por agente, desenho de texto e sprites em CoreGraphics. |
@@ -123,6 +124,10 @@ O `claude` é procurado no `PATH` capturado e depois em `~/.local/bin`, `~/.clau
 **Comando em segundo plano.** É o que o CLARK acrescenta ao original. Com o turno encerrado e um comando rodando em segundo plano, a tela do Claude Code fica parada e a tabela acima diria IDLE. Parado (em IDLE, SHELL ou DONE), o agente lê uma vez por segundo `<config do claude>/sessions/<pid>.json`, o arquivo em que o Claude Code grava o `status` da sessão do processo: `busy`, `idle` ou `shell`. Com `shell`, onde a tabela diz IDLE o estado é SHELL: rótulo `SHELL` no ciano do terminal, a cor do `1 shell` do rodapé do Claude Code, contado em WORKING na barra superior. O DONE e a notificação não mudam, porque o turno acabou e o agente espera você; quem olha para ele vê o DONE dar lugar ao SHELL. Quando o comando termina, o `status` deixa de ser `shell` e o estado volta a IDLE, ou o Claude Code retoma o turno e a saída do terminal leva a WORKING.
 
 O arquivo só vale se é um arquivo comum de até 64 KiB, nomeia o mesmo `pid` e foi gravado depois que o processo abriu; mais velho que isso, sobrou de outro processo que teve o mesmo número. Ele é um detalhe interno do Claude Code, não uma interface: sem o arquivo, ou com um `status` que o CLARK não conhece, o estado sai só da saída do terminal, como antes. O CLARK só lê esse arquivo, e não o procura para o agente que abriu o shell por falta do `claude`.
+
+**Controle remoto.** O mesmo arquivo diz se o controle remoto do Claude Code (`/remote-control`) está ligado na sessão. O rodapé do Claude Code avisa com `/rc active`, mas some em terminal estreito, e num painel do CLARK o terminal quase sempre é estreito. Enquanto o controle remoto dura, o arquivo guarda o nome da sessão remota em `bridgeSessionId`; ao desligar, o Claude Code grava `null` no lugar. Texto não vazio nesse campo liga a etiqueta `REMOTO`; campo ausente, `null`, vazio ou de outro tipo desliga, assim como a falta do arquivo. O CLARK não guarda o nome nem monta o endereço da sessão: a etiqueta só avisa, sem clique.
+
+A etiqueta é azul (`term[4]`, cor que nenhum estado usa), com as letras na cor do fundo. Ela não é estado: fica fora da máquina de estado e das contagens da barra superior. O controle remoto é relido uma vez por segundo em qualquer estado menos EXITED, inclusive em WORKING, quando o arquivo não serve para decidir o estado. Em EXITED a etiqueta some na hora e o arquivo não é mais lido, porque o processo morto à força deixa o arquivo para trás. No cabeçalho ela fica encostada na etiqueta de estado e escolhe o espaço antes da empresa, do resumo do diff e do caminho, sem tirar espaço do nome e do projeto: no aperto sai primeiro o resumo do diff, e sem espaço nem para ela o aviso fica só no card. No card ela fica na ponta direita da linha de detalhe, com o resumo do diff à esquerda.
 
 **Notificação.** Só com a janela inativa: notificação do macOS com `CLARK · <agente>`, selo no Dock com a contagem de DONE e pedido de atenção do app.
 
@@ -304,7 +309,7 @@ Tudo em `~/.config/clark/`.
 - `EnvPolicy`: cada padrão de segredo remove; as formas curtas de senha só contam como sufixo; `env_allow` global e da empresa devolvem; variável liberada para uma empresa não aparece em outra; as variáveis de sessão do pai saem sempre.
 - `CompanyResolver`: prefixo mais longo vence; detecção automática sob `roots`; `AVULSO`; cor estável para o mesmo nome; `path` que cobre uma root gera aviso.
 - `AgentStateMachine`: cada linha da tabela de estado, com relógio injetado, e o SHELL em cada ponto em que ela diz IDLE.
-- `SessionActivity`: os três valores de `status`; valor desconhecido, `pid` de outro processo, arquivo mais velho que o processo, pasta ou pipe no lugar do arquivo e arquivo grande demais não dão resposta.
+- `SessionReport`: os três valores de `status`; valor desconhecido não dá atividade; `pid` de outro processo, arquivo mais velho que o processo, pasta ou pipe no lugar do arquivo e arquivo grande demais não dão resposta; o controle remoto liga com o nome da sessão remota, desliga com `null`, texto vazio ou outro tipo, e não depende do `status`.
 - `SessionLocator` e `ClaudeCommand`: UUID inválido é trocado; `--resume` contra `--session-id`; flags de sessão nos extras suprimem as do app; detecção das flags de permissão.
 - `Config`: campo inválido cai no padrão; chave desconhecida sobrevive; arquivo gravado sai `0600`.
 - `QueueStatus`: amostras sintéticas no formato real dos dois helpers, sem dado de cliente; JSON truncado dá erro tratado.
