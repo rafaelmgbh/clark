@@ -25,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = MainWindowController(config: loaded.config, store: store, home: home, notifier: notifier)
         self.controller = controller
         controller.window?.setFrameAutosaveName("ClarkMainWindow")
+        controller.diffAutosaveName = "ClarkDiff"
         controller.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
 
@@ -51,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let launch = AgentLaunch(
                     baseEnvironment: capture.variables,
                     claudePath: ClaudeLocator.find(path: capture.variables["PATH"], home: home),
+                    gitPath: GitLocator.find(path: capture.variables["PATH"]),
                     shell: shell, home: home, claudeArgs: options.claudeArgs, resolver: resolver)
                 controller.start(launch: launch, options: options, startupWarnings: warnings)
             }

@@ -67,12 +67,33 @@ A lista é lida do disco cada vez que o menu abre: são as subpastas das `roots`
 `companies.json` (veja [Empresas](#empresas)). O ⌘N repete o último projeto escolhido. Com os 16
 agentes abertos, escolher um projeto só troca a pasta do próximo agente.
 
+### Diff
+
+O cabeçalho e o card de cada agente mostram o que mudou no repositório da pasta dele desde o
+último commit: `+12 -3 4 ARQ` são 12 linhas a mais e 3 a menos, em 4 arquivos. Repositório sem
+mudança e pasta fora de repositório não mostram nada.
+
+O ⌘⇧D abre a janela do diff do agente em foco: à esquerda os arquivos mudados, à direita o diff do
+arquivo escolhido. O botão direito no cabeçalho de um agente tem o mesmo `Ver diff`. A janela é
+uma só: pedir o diff de outro agente troca o conteúdo dela.
+
+- O diff é do repositório inteiro, mesmo com o agente numa subpasta. Entram as mudanças já
+  preparadas com `git add` e os arquivos novos ainda não rastreados; os ignorados ficam de fora.
+- O CLARK relê o repositório quando o agente abre, quando ele para de trabalhar, quando o CLARK
+  volta para a frente e no ⌘R. Não há leitura periódica.
+- O CLARK só lê: não prepara, não desfaz e não grava nada no repositório.
+- Arquivo binário entra na lista sem contagem de linhas. Link simbólico novo também, e o diff dele
+  mostra para onde o link aponta, não o conteúdo do destino.
+- Diff com mais de 1 MiB ou de 20 mil linhas é cortado, com um aviso no fim.
+
 ### Atalhos
 
 | Atalho | Ação |
 |--------|------|
 | ⌘N | Novo agente |
 | ⌘D | Abrir um agente num projeto |
+| ⌘⇧D | Ver o diff do agente em foco |
+| ⌘R | Reler o diff de todos os agentes |
 | ⌘W | Fechar o agente em foco |
 | ⌘L | Alternar entre foco e grade |
 | ⌘↩ | Zoom no agente |

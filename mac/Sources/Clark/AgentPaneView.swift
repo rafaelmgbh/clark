@@ -6,6 +6,8 @@ struct AgentLaunch {
     var baseEnvironment: [String: String]
     /// nil: o `claude` não foi encontrado e o painel abre o shell com o aviso.
     var claudePath: String?
+    /// nil: sem git na máquina, e nenhum agente mostra diff.
+    var gitPath: String? = nil
     var shell: String
     var home: String
     /// Argumentos extras vindos de `clark -- <args>`.
@@ -38,6 +40,7 @@ protocol AgentPaneDelegate: AnyObject {
     func paneRequestsZoom(_ pane: AgentPaneView)
     func paneRequestsClose(_ pane: AgentPaneView)
     func paneRequestsRename(_ pane: AgentPaneView)
+    func paneRequestsDiff(_ pane: AgentPaneView)
 }
 
 /// Painel de um agente: moldura, cabeçalho, faixa de aviso e o terminal.
@@ -63,6 +66,8 @@ final class AgentPaneView: PixelView {
     /// Nomes das variáveis que a política de ambiente tirou deste agente. Nunca os valores.
     private(set) var removedVariables: [String] = []
     private(set) var bypassesPermissions = false
+    /// O que mudou no repositório da pasta do agente.
+    let diff = DiffMonitor()
     weak var delegate: AgentPaneDelegate?
     var isFocused = false { didSet { if isFocused != oldValue { needsDisplay = true } } }
 
@@ -73,13 +78,16 @@ final class AgentPaneView: PixelView {
     private var terminalAppearance: TerminalAppearance
     private let clock: () -> Double
     private var previewAt = -Double.infinity
+    /// Estado na última vez em que o painel avisou que mudou.
+    private var reportedState = AgentState.boot
 
     var color: RGB { CompanyResolver.tone(company.color, index: tone) }
     var state: AgentState { machine.state }
 
     var snapshot: AgentSnapshot {
         AgentSnapshot(name: name, company: company.name, color: color,
-                      path: PathTools.short(directory, home: launch.home), state: machine.state, preview: preview)
+                      path: PathTools.short(directory, home: launch.home), state: machine.state, preview: preview,
+                      diff: diff.summary)
     }
 
     init(name: String, directory: String, sessionID: String, tone: Int, launch: AgentLaunch,
@@ -105,6 +113,7 @@ final class AgentPaneView: PixelView {
         header.menuProvider = { [weak self] in self?.contextMenu() }
         zoomButton.onClick = { [weak self] in self.map { $0.delegate?.paneRequestsZoom($0) } }
         closeButton.onClick = { [weak self] in self.map { $0.delegate?.paneRequestsClose($0) } }
+        diff.onChange = { [weak self] in self?.changed() }
         addSubview(header)
         addSubview(zoomButton)
         addSubview(closeButton)
@@ -142,6 +151,10 @@ final class AgentPaneView: PixelView {
             terminal.markExited()
             machine.exited()
         }
+        // O git do diff nasce com o ambiente já filtrado do agente: não recebe o que o agente não recebe.
+        diff.configure(runner: launch.gitPath.map { GitRunner(executable: $0, agentEnvironment: environment.variables) },
+                       directory: directory)
+        diff.refresh()
         needsLayout = true
         changed()
     }
@@ -253,6 +266,9 @@ final class AgentPaneView: PixelView {
     }
 
     private func changed() {
+        // O agente parou de trabalhar: é a hora em que os arquivos acabaram de mudar.
+        if reportedState == .working && machine.state != .working { diff.refresh() }
+        reportedState = machine.state
         header.snapshot = snapshot
         needsDisplay = true
         delegate?.paneDidChange(self)
@@ -264,6 +280,7 @@ final class AgentPaneView: PixelView {
         menu.autoenablesItems = false
         menu.addItem(actionItem("Renomear…") { [weak self] in self.map { $0.delegate?.paneRequestsRename($0) } })
         menu.addItem(actionItem("Zoom") { [weak self] in self.map { $0.delegate?.paneRequestsZoom($0) } })
+        menu.addItem(actionItem("Ver diff") { [weak self] in self.map { $0.delegate?.paneRequestsDiff($0) } })
         menu.addItem(actionItem("Fechar") { [weak self] in self.map { $0.delegate?.paneRequestsClose($0) } })
         menu.addItem(.separator())
         // Sem `claude` o painel é o shell de login, que relê o rc e devolve o que saiu do ambiente:

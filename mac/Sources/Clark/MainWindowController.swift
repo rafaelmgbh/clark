@@ -24,6 +24,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     var isAppActive: () -> Bool = { NSApplication.shared.isActive }
     /// A janela está com o teclado. Trocado nos testes, que rodam sem janela na tela.
     lazy var isWindowKey: () -> Bool = { [weak self] in self?.window?.isKeyWindow ?? false }
+    /// Janela do diff, criada no primeiro pedido.
+    private(set) var diffPanel: DiffWindowController?
+    /// Nome com que a janela do diff guarda posição e tamanho. nil: não guarda.
+    var diffAutosaveName: String?
+    /// Põe uma janela auxiliar na tela. Trocado nos testes, que não abrem janela.
+    var present: (NSWindowController) -> Void = { $0.showWindow(nil) }
 
     private var config: ClarkConfig
     private let store: ConfigStore
@@ -37,6 +43,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     private var cards: [ObjectIdentifier: AgentCardView] = [:]
     private var timer: Timer?
     private var responderObservation: NSKeyValueObservation?
+    private var activationObserver: NSObjectProtocol?
     private var renamePopover: NSPopover?
     private weak var renameTarget: AgentPaneView?
     private var saveFailureWarned = false
@@ -69,6 +76,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         responderObservation = window.observe(\.firstResponder) { [weak self] _, _ in
             self?.firstResponderChanged()
         }
+        // Voltar ao CLARK é o sinal de que algo pode ter mudado por fora: um commit no terminal, um editor.
+        activationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.refreshDiffs() }
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
@@ -159,6 +170,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         timer?.invalidate()
         timer = nil
         responderObservation = nil
+        if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
+        activationObserver = nil
+        diffPanel?.close()
+        diffPanel = nil
         panes.forEach { $0.shutdown() }
     }
 
@@ -227,6 +242,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     func close(_ pane: AgentPaneView) {
         guard let index = panes.firstIndex(where: { $0 === pane }) else { return }
         pane.delegate = nil
+        diffPanel?.paneClosed(pane)
         pane.shutdown()
         pane.removeFromSuperview()
         panes.remove(at: index)
@@ -260,6 +276,31 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         guard let name = AgentNaming.sanitized(text) else { return }
         pane.rename(name)
         persist()
+    }
+
+    // MARK: diff
+
+    /// A janela do diff, mostrando o agente. Não a põe na tela.
+    func diffPanel(for pane: AgentPaneView) -> DiffWindowController {
+        let panel = diffPanel ?? {
+            let created = DiffWindowController(theme: theme, home: home)
+            if let diffAutosaveName { created.window?.setFrameAutosaveName(diffAutosaveName) }
+            return created
+        }()
+        diffPanel = panel
+        panel.attach(to: pane)
+        return panel
+    }
+
+    /// Abre a janela do diff no agente, com uma leitura nova do repositório.
+    private func presentDiff(of pane: AgentPaneView) {
+        let panel = diffPanel(for: pane)
+        pane.diff.refresh()
+        present(panel)
+    }
+
+    func refreshDiffs() {
+        panes.forEach { $0.diff.refresh() }
     }
 
     func setDefaultDirectory(_ directory: String) {
@@ -498,9 +539,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     func paneDidChange(_ pane: AgentPaneView) {
         cards[ObjectIdentifier(pane)]?.snapshot = pane.snapshot
+        diffPanel?.paneDidChange(pane)
         refreshChrome()
     }
 
+    func paneRequestsDiff(_ pane: AgentPaneView) { presentDiff(of: pane) }
     func paneRequestsSelect(_ pane: AgentPaneView) { select(pane) }
     func paneRequestsZoom(_ pane: AgentPaneView) { toggleZoom(of: pane) }
     func paneRequestsClose(_ pane: AgentPaneView) { close(pane) }
@@ -639,6 +682,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         if let pane = currentPane { paneRequestsRename(pane) }
     }
 
+    @objc func showDiff(_ sender: Any?) {
+        if let pane = currentPane { presentDiff(of: pane) }
+    }
+
+    @objc func refreshDiff(_ sender: Any?) { refreshDiffs() }
+
     @objc func increaseFont(_ sender: Any?) { setFontScale(fontScale + Self.fontStep) }
     @objc func decreaseFont(_ sender: Any?) { setFontScale(fontScale - Self.fontStep) }
     @objc func resetFont(_ sender: Any?) { setFontScale(1) }
@@ -649,7 +698,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             return launch != nil && panes.count < ClarkConfig.maxAgents
         case #selector(chooseProject(_:)), #selector(openProject(_:)), #selector(chooseFolder(_:)):
             return launch != nil
-        case #selector(closeAllAgents(_:)), #selector(toggleZoom(_:)), #selector(renameAgent(_:)):
+        case #selector(closeAllAgents(_:)), #selector(toggleZoom(_:)), #selector(renameAgent(_:)),
+             #selector(showDiff(_:)), #selector(refreshDiff(_:)):
             return !panes.isEmpty
         case #selector(nextAgent(_:)), #selector(previousAgent(_:)):
             return panes.count > 1

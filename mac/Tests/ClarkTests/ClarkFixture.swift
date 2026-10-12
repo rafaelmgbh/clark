@@ -16,6 +16,8 @@ final class ClarkFixture {
     let temp = TemporaryDirectory()
     let notifier = SpyNotifier()
     var now = 100.0
+    /// Git dos agentes. nil, como na maioria dos testes: nenhum agente lê diff.
+    var gitPath: String?
     private(set) var controllers: [MainWindowController] = []
 
     var home: String { temp.path }
@@ -30,8 +32,8 @@ final class ClarkFixture {
                                        fallbackColor: Theme.dark.dim) {
             PathTools.canonical($0, base: home, home: home)
         }
-        return AgentLaunch(baseEnvironment: environment ?? self.environment, claudePath: claude, shell: "/bin/sh",
-                           home: home, claudeArgs: claudeArgs, resolver: resolver)
+        return AgentLaunch(baseEnvironment: environment ?? self.environment, claudePath: claude, gitPath: gitPath,
+                           shell: "/bin/sh", home: home, claudeArgs: claudeArgs, resolver: resolver)
     }
 
     func controller(config: ClarkConfig? = nil) -> MainWindowController {

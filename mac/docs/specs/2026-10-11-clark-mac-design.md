@@ -73,6 +73,7 @@ mac/
 | `QueueStatus` | Decodifica o JSON de `fila.py status --json` e de `runstate.py find` e `report`. | Foundation |
 | `PixelFont`, `Sprites`, `Themes` | Dados portados do original: glifos, quadros do dragão, três paletas. | nada |
 | `GridLayout` | Linhas e colunas da grade para N painéis e o tamanho da janela. | nada |
+| `GitDiff`, `GitLocator` | Interpreta a saída do git em arquivos com estado e contagem de linhas, soma os totais e classifica as linhas de um diff; acha o `git` no `PATH` capturado. | sistema de arquivos |
 
 ### Clark (AppKit)
 
@@ -81,6 +82,9 @@ mac/
 | `ShellEnvironment` | Captura o ambiente do shell de login uma vez na abertura. |
 | `AgentPaneView` | Cabeçalho desenhado + subclasse de `LocalProcessTerminalView`; traduz eventos do terminal para a máquina de estado. |
 | `AgentCardView` | Card da lista lateral: nome, estado, empresa, caminho e as duas últimas linhas úteis do terminal. |
+| `GitRunner` | Roda o git na pasta de um agente, só para ler, com tempo e tamanho limitados. |
+| `DiffMonitor` | Lê o diff da pasta de um agente fora da thread principal e guarda o último resultado. |
+| `DiffBadge`, `DiffWindowController` | Resumo do diff no cabeçalho e no card; janela única com a lista de arquivos e o diff do escolhido. |
 | `QueueWatcher` | Observa os arquivos de estado e chama os helpers das skills quando mudam. |
 | `QueuePanelView` | Desenha a fila e o botão de abrir agente na worktree. |
 | `SplashView`, `DragonLayer`, `PixelRenderer` | Splash animada, dragões por agente, desenho de texto e sprites em CoreGraphics. |
@@ -143,6 +147,20 @@ Quem autentica o `claude` por variável de ambiente precisa listá-la em `env_al
 
 **Menu de projetos.** O botão `PROJETO` da barra (⌘D) troca o seletor de pastas do original por um menu: `GLOBAL` (a home, empresa `AVULSO`), as empresas com seus projetos e `Outra pasta…` (o seletor do macOS). Escolher um item abre um agente naquela pasta e ela passa a ser a do ⌘N; com o limite de agentes atingido, só a pasta muda. A lista vem do disco a cada abertura do menu: as subpastas visíveis das `roots` e os `paths` declarados que existem, agrupados pelo nome que a resolução acima dá a cada um. Assim, tudo o que aparece numa empresa abre como agente dela; a pasta que resolveria para outra empresa (um `path` declarado dentro de outra, um link simbólico) fica de fora. Há um nível de aninhamento: a pasta sem `.git` que guarda pelo menos um repositório vira submenu.
 
+## Diff do agente
+
+Não existe no original. Cada agente mostra o que mudou no repositório da sua pasta desde o último commit.
+
+**Resumo.** O cabeçalho e o card trazem `+12 -3 4 ARQ`: linhas a mais em verde, linhas a menos em vermelho e a quantidade de arquivos. Repositório sem mudança, pasta fora de repositório e máquina sem `git` não mostram resumo. Quando falta largura, a empresa fica e o resumo sai.
+
+**Janela.** O ⌘⇧D e o `Ver diff` do menu do cabeçalho abrem a janela do diff: à esquerda os arquivos (estado, caminho, contagem), à direita o diff unificado do arquivo escolhido, com uma cor por tipo de linha. A janela é uma só no app, e pedir o diff de outro agente troca o conteúdo dela. Com ela na frente, o ⌘W fecha a janela e não o agente. Fechada, ela larga o agente e não lê mais nada. Fechar o agente mostrado fecha a janela.
+
+**O que entra.** O repositório inteiro, mesmo com o agente numa subpasta, contra o `HEAD`: mudanças preparadas e não preparadas, e os arquivos não rastreados que o `.gitignore` não cobre. Repositório sem commit é comparado com a árvore vazia. Renomeação aparece como um arquivo removido e outro novo. Submódulo fica de fora.
+
+**Quando lê.** Na abertura do agente, quando ele sai de WORKING, quando o app volta para a frente e no ⌘R, que relê todos os agentes. Não há leitura periódica. As leituras da lista passam por uma fila única, uma por vez, fora da thread principal; pedidos feitos durante uma leitura viram uma leitura só.
+
+**Limites.** O git tem 10 s para responder. A lista de arquivos vai até 4 MiB de saída e o diff de um arquivo até 1 MiB; a tela mostra até 20 mil linhas de 2 mil caracteres. O que passa disso é cortado, com aviso. Só os 200 primeiros arquivos não rastreados têm as linhas contadas, e só os de até 1 MiB.
+
 ## Segurança
 
 | Achado no original | Tratamento |
@@ -156,6 +174,8 @@ Quem autentica o `claude` por variável de ambiente precisa listá-la em `env_al
 | Atualização por `git pull` em cima do executável | O app instalado é uma cópia compilada; mudança do upstream só entra por diff revisado. |
 
 **Achado da porta.** O SwiftTerm responde ao pedido de leitura da área de transferência (OSC 52) com o texto que o usuário copiou, e a classe-base não deixa desligar isso. O app descarta a resposta antes que ela chegue ao processo: um texto qualquer na saída de um agente não lê a área de transferência. A escrita (o `copiar` dos programas) continua valendo. O relato de título, outro vetor conhecido, o SwiftTerm já não responde.
+
+**Diff.** O app roda o `git` sozinho em pastas de qualquer empresa, então o processo nasce com o ambiente já filtrado do próprio agente, sem as variáveis `GIT_*` herdadas, e só executa comandos de leitura (`rev-parse`, `diff`, `ls-files`, `hash-object`). O que o config do repositório poderia mandar executar fica desligado: monitor de arquivos (`core.fsmonitor`), ganchos (`core.hooksPath`), programa externo de diff (`--no-ext-diff`), conversor de texto (`--no-textconv`) e paginador. O git não pergunta nada (`GIT_TERMINAL_PROMPT=0`), não regrava o índice (`--no-optional-locks`) e não busca na rede (`protocol.allow=never`, `GIT_NO_LAZY_FETCH`). Os caminhos valem ao pé da letra (`--literal-pathspecs`) e vêm sempre depois de `--`. Link simbólico não rastreado não é seguido, nem na contagem nem no diff: o destino pode estar fora do repositório. Fica um limite conhecido: os filtros `clean` e `process` declarados no config do repositório continuam rodando quando o git compara um arquivo que os usa, porque sem eles o diff de arquivo em Git LFS sairia errado.
 
 ## Painel da fila
 
@@ -204,6 +224,8 @@ O tique de animação é de 100 ms, como no original, e só redesenha o que est�
 | ⌘⇧[ e ⌘⇧] | agente anterior e próximo | Ctrl+Shift+← e → |
 | ⌘1 a ⌘9 | pular para o agente N | Alt+1 a 9 |
 | ⌘D | abrir agente num projeto (menu `PROJETO`) | Ctrl+Shift+D |
+| ⌘⇧D | ver o diff do agente em foco | não tem |
+| ⌘R | reler o diff de todos os agentes | não tem |
 | ⌘T | mostrar ou esconder a fila | Ctrl+Shift+T |
 | ⌘C e ⌘V | copiar e colar | Ctrl+Shift+C e V |
 | ⌘+, ⌘− e ⌘0 | tamanho da fonte | Ctrl+Shift++, − e 0 |
@@ -232,6 +254,9 @@ Tudo em `~/.config/clark/`.
 | Falha ao gravar config | O estado em memória segue valendo; a barra avisa, uma vez, que os agentes não voltam ao reabrir. |
 | Pasta de um agente salvo não existe mais | O agente abre na home, numa conversa nova; aviso na barra. |
 | Fila indisponível | Ver Painel da fila. |
+| `git` não encontrado | Nenhum agente mostra resumo de diff; a janela do diff diz que não achou o git. |
+| A pasta do agente não é repositório | Sem resumo; a janela do diff diz isso. |
+| O git falha ou não responde em 10 s | Sem resumo; a janela do diff avisa. A próxima leitura tenta de novo. |
 
 ## Testes
 
@@ -244,8 +269,9 @@ Tudo em `~/.config/clark/`.
 - `Config`: campo inválido cai no padrão; chave desconhecida sobrevive; arquivo gravado sai `0600`.
 - `QueueStatus`: amostras sintéticas no formato real dos dois helpers, sem dado de cliente; JSON truncado dá erro tratado.
 - `GridLayout`: mesmas contas do original para 1 a 16 painéis.
+- `GitDiff`: saída do git com caminhos estranhos (espaço, tabulação, `:` e `*`), binário sem contagem, totais e rótulos do resumo, tipo de cada linha do diff.
 
-`swift test` em `ClarkTests` cobre a interface sem depender da tela: o terminal com processo de verdade (saída, sino, entrada, leitura do buffer, links, pedido de leitura da área de transferência), a captura do ambiente do shell e a sonda do que o rc devolve, o desenho das views de pixel e o `MainWindowController` (abrir, fechar, restaurar, foco, grade, zoom, renomear, menus e avisos).
+`swift test` em `ClarkTests` cobre a interface sem depender da tela: o terminal com processo de verdade (saída, sino, entrada, leitura do buffer, links, pedido de leitura da área de transferência), a captura do ambiente do shell e a sonda do que o rc devolve, o desenho das views de pixel e o `MainWindowController` (abrir, fechar, restaurar, foco, grade, zoom, renomear, menus e avisos). O diff roda contra o git de verdade em repositórios temporários: a lista e o diff de cada tipo de arquivo, o repositório com config hostil (nada do que ele aponta é executado), as variáveis `GIT_*` herdadas, o git que trava, as releituras do `DiffMonitor` e a janela do diff em cada estado.
 
 `Tests/packaging.sh` cobre o `install.sh` e o atalho `clark` numa HOME temporária.
 

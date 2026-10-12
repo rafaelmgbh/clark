@@ -42,6 +42,10 @@ enum MainMenu {
             item("Próximo agente", #selector(MainWindowController.nextAgent(_:)), "}"),
             item("Renomear…", #selector(MainWindowController.renameAgent(_:)), ""),
             .separator(),
+            // `D` maiúsculo: o atalho é ⌘⇧D. O ⌘D é o do projeto.
+            item("Ver diff", #selector(MainWindowController.showDiff(_:)), "D"),
+            item("Atualizar diff", #selector(MainWindowController.refreshDiff(_:)), "r"),
+            .separator(),
         ]
         for number in 1...9 {
             let entry = item("Agente \(number)", #selector(MainWindowController.selectAgentByNumber(_:)), "\(number)")

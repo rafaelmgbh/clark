@@ -949,7 +949,9 @@ final class MainWindowControllerTests: XCTestCase {
             "\($0.keyEquivalentModifierMask.contains(.option) ? "opt+" : "")\($0.keyEquivalent)"
         }
         XCTAssertEqual(Set(shortcuts).count, shortcuts.count, "atalho repetido: \(shortcuts)")
-        for key in ["n", "w", "d", "l", "\r", "{", "}", "+", "=", "-", "0", "c", "v", "q"] + (1...9).map(String.init) {
+        // O `D` maiúsculo é o ⌘⇧D do diff; o `d` minúsculo é o ⌘D do projeto.
+        for key in ["n", "w", "d", "D", "r", "l", "\r", "{", "}", "+", "=", "-", "0", "c", "v", "q"]
+            + (1...9).map(String.init) {
             XCTAssertTrue(shortcuts.contains(key), "falta ⌘\(key)")
         }
         XCTAssertFalse(shortcuts.contains("t"), "⌘T é da fila de tarefas, que chega no M2")
@@ -957,7 +959,7 @@ final class MainWindowControllerTests: XCTestCase {
         // Toda ação do CLARK no menu precisa existir no controller: seletor errado vira item morto, sem erro.
         let expected = ["newAgent:", "chooseProject:", "closeAgent:", "closeAllAgents:", "toggleLayout:", "toggleZoom:",
                         "increaseFont:", "decreaseFont:", "resetFont:", "previousAgent:", "nextAgent:",
-                        "renameAgent:", "selectAgentByNumber:"]
+                        "renameAgent:", "showDiff:", "refreshDiff:", "selectAgentByNumber:"]
         let actions = Set(leaves.compactMap(\.action).map(NSStringFromSelector))
         for name in expected {
             XCTAssertTrue(actions.contains(name), "falta no menu: \(name)")

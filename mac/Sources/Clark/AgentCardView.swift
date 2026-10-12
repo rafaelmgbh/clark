@@ -104,12 +104,21 @@ final class AgentCardView: PixelView {
         Pixel.fill(context, x, 31, 5, 5, stateColor)
         Pixel.text(context, StateLabel.text(snapshot.state, time: time), x + 9, 30, scale: 1, stateColor)
         var pathX = x + 9 + PixelFont.textWidth("WORKING...", scale: 1) + 10
+        var limit = width - 8
         let companyWidth = PixelFont.textWidth(snapshot.company, scale: 1)
-        if pathX + companyWidth < width - 8 {
+        if pathX + companyWidth < limit {
             Pixel.text(context, snapshot.company, pathX, 30, scale: 1, snapshot.color)
             pathX += companyWidth + 8
         }
-        Pixel.mono(context, snapshot.path, pathX, 27, width: width - pathX - 8, size: 9,
+        // O resumo do diff fica na ponta direita da linha; o caminho encolhe para dar lugar.
+        if let diff = snapshot.diff {
+            let badgeWidth = DiffBadge.width(diff)
+            if limit - badgeWidth > pathX {
+                DiffBadge.draw(context, diff, x: limit - badgeWidth, y: 30, theme: theme)
+                limit -= badgeWidth + 8
+            }
+        }
+        Pixel.mono(context, snapshot.path, pathX, 27, width: limit - pathX, size: 9,
                    theme.dim.mix(background, 0.3), truncate: .byTruncatingHead)
 
         let lines = snapshot.preview.isEmpty ? ["…"] : snapshot.preview

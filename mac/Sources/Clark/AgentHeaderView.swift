@@ -11,6 +11,8 @@ struct AgentSnapshot: Equatable {
     var path: String
     var state: AgentState
     var preview: [String] = []
+    /// O que mudou no repositório da pasta. nil: sem leitura, fora de repositório ou sem mudança.
+    var diff: DiffSummary? = nil
 }
 
 /// Cabeçalho do painel (`_draw_head` do original). O quadrado na cor da empresa ocupa o
@@ -64,12 +66,22 @@ final class AgentHeaderView: PixelView {
         let pillX = width - pillWidth - 6
         let pillY = (height - pillHeight) / 2
 
+        // Entre o nome e a pílula: a empresa primeiro, o resumo do diff encostado na pílula se couber,
+        // e o caminho com o que sobrar.
+        var right = pillX - 10
         let companyWidth = PixelFont.textWidth(snapshot.company, scale: 1)
-        if pillX - x - 10 >= companyWidth {
+        if right - x >= companyWidth {
             Pixel.text(context, snapshot.company, x, (height - 7) / 2, scale: 1, snapshot.color)
             x += companyWidth + 10
         }
-        let room = pillX - x - 10
+        if let diff = snapshot.diff {
+            let badgeWidth = DiffBadge.width(diff)
+            if right - badgeWidth >= x {
+                DiffBadge.draw(context, diff, x: right - badgeWidth, y: (height - 7) / 2, theme: theme)
+                right -= badgeWidth + 10
+            }
+        }
+        let room = right - x
         if room > 60 {
             Pixel.mono(context, snapshot.path, x, (height - 12) / 2, width: room, size: 9, theme.dim,
                        truncate: .byTruncatingHead)

@@ -10,9 +10,9 @@ final class PixelViewsTests: XCTestCase {
     private let magenta = RGB(r: 1, g: 0, b: 1)
 
     private func snapshot(_ state: AgentState = .idle, name: String = "AGENT 1", company: String = "ACME",
-                          preview: [String] = []) -> AgentSnapshot {
+                          preview: [String] = [], diff: DiffSummary? = nil) -> AgentSnapshot {
         AgentSnapshot(name: name, company: company, color: magenta, path: "~/Projetos/acme", state: state,
-                      preview: preview)
+                      preview: preview, diff: diff)
     }
 
     /// Clique no ponto (x, y) da view, contado de cima para baixo. O evento leva a coordenada
@@ -114,6 +114,29 @@ final class PixelViewsTests: XCTestCase {
         header.snapshot = snapshot(.exited)
         let exited = RenderedImage(header, width: 600, height: AgentHeaderView.height)
         XCTAssertTrue(exited.isColor(theme.red, atX: pill.x, y: pill.y))
+    }
+
+    func testHeaderShowsTheDiffSummaryBeforeThePill() {
+        let diff = DiffSummary(files: 4, added: 12, removed: 3)
+        XCTAssertEqual(DiffBadge.width(diff), PixelFont.textWidth("+12 -3 4 ARQ", scale: 1))
+        let header = AgentHeaderView(snapshot: snapshot(.idle, diff: diff))
+        let image = RenderedImage(header, width: 600, height: AgentHeaderView.height)
+        let badgeX = pillOrigin(width: 600).x - 10 - DiffBadge.width(diff)
+        let added = PixelFont.textWidth("+12", scale: 1)
+        XCTAssertGreaterThan(image.count(theme.green, x: badgeX, y: 11, width: added, height: 7), 0, "+12 em verde")
+        XCTAssertGreaterThan(image.count(theme.red, x: badgeX + added, y: 11, width: 30, height: 7), 0, "-3 em vermelho")
+        XCTAssertEqual(image.count(theme.green, x: 0, y: 0, width: badgeX, height: 30), 0)
+
+        header.snapshot = snapshot(.idle)
+        let plain = RenderedImage(header, width: 600, height: AgentHeaderView.height)
+        XCTAssertEqual(plain.count(theme.green) + plain.count(theme.red), 0, "sem mudanças, sem resumo")
+    }
+
+    func testNarrowHeaderDropsTheDiffSummaryAndKeepsTheName() {
+        let header = AgentHeaderView(snapshot: snapshot(.idle, diff: DiffSummary(files: 4, added: 12, removed: 3)))
+        let image = RenderedImage(header, width: 240, height: AgentHeaderView.height)
+        XCTAssertEqual(image.count(theme.green) + image.count(theme.red), 0)
+        XCTAssertGreaterThan(image.count(theme.ink, x: 30, y: 8, width: 100, height: 14), 0, "nome")
     }
 
     func testHeaderDonePillBlinks() {
@@ -221,6 +244,28 @@ final class PixelViewsTests: XCTestCase {
         XCTAssertEqual([selected, closed], [1, 1])
         card.mouseDown(with: click(card, x: 20, y: 40))
         XCTAssertEqual([selected, closed], [2, 1])
+    }
+
+    func testCardShowsTheDiffSummaryOnTheStateLine() {
+        let diff = DiffSummary(files: 4, added: 12, removed: 3)
+        let card = AgentCardView(snapshot: snapshot(.idle, diff: diff))
+        let badgeX = cardWidth - 8 - DiffBadge.width(diff)
+        let image = render(card)
+        XCTAssertGreaterThan(image.count(theme.green, x: badgeX, y: 30, width: 20, height: 7), 0, "+12 em verde")
+        XCTAssertGreaterThan(image.count(theme.red, x: badgeX, y: 30, width: DiffBadge.width(diff), height: 7), 0)
+        XCTAssertEqual(image.count(theme.green, x: 0, y: 0, width: badgeX, height: AgentCardView.height), 0)
+        XCTAssertGreaterThan(image.count(magenta, x: 90, y: 30, width: 60, height: 7), 0, "a empresa continua na linha")
+
+        card.snapshot = snapshot(.idle)
+        let plain = render(card)
+        XCTAssertEqual(plain.count(theme.green) + plain.count(theme.red), 0, "sem mudanças, sem resumo")
+    }
+
+    func testCardWithBigNumbersStillFitsTheSummary() {
+        let diff = DiffSummary(files: 1234, added: 98_765, removed: 43_210)
+        XCTAssertLessThan(DiffBadge.width(diff), cardWidth - 110, "cabe ao lado do estado")
+        let image = render(AgentCardView(snapshot: snapshot(.working, diff: diff)))
+        XCTAssertGreaterThan(image.count(theme.red, x: 100, y: 30, width: cardWidth - 100, height: 7), 0)
     }
 
     func testCardPreviewChangesTheDrawing() {
