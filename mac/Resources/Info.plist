@@ -8,6 +8,9 @@
     <string>CLARK</string>
     <key>CFBundleExecutable</key>
     <string>Clark</string>
+    <!-- Contents/Resources/AppIcon.icns, gerado pelo build.sh. -->
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>io.github.rafaelmgbh.clark</string>
     <key>CFBundleInfoDictionaryVersion</key>

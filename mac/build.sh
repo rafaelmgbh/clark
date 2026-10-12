@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compila o CLARK em release, monta dist/Clark.app e assina ad hoc.
+# Compila o CLARK em release, monta dist/Clark.app com o ícone e assina ad hoc.
 #
 # Uso: ./build.sh
 set -euo pipefail
@@ -24,8 +24,19 @@ if ! [[ "$short" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$build" =~ ^[0-9]+$ ]]; then
 fi
 
 rm -rf "$app"
-mkdir -p "$app/Contents/MacOS"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$binary" "$app/Contents/MacOS/Clark"
+
+# O ícone é desenhado pelo próprio binário (Sources/Clark/AppIcon.swift), um PNG por tamanho.
+iconset="$(mktemp -d)/AppIcon.iconset"
+trap 'rm -rf "$(dirname "$iconset")"' EXIT
+mkdir "$iconset"
+for points in 16 32 128 256 512; do
+  "$binary" --export-icon "$iconset/icon_${points}x${points}.png" --icon-size "$points"
+  "$binary" --export-icon "$iconset/icon_${points}x${points}@2x.png" --icon-size "$((points * 2))"
+done
+iconutil -c icns "$iconset" -o "$app/Contents/Resources/AppIcon.icns"
+
 cp Resources/Info.plist "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy \
   -c "Set :CFBundleShortVersionString $short" \

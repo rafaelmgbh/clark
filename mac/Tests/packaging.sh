@@ -20,6 +20,7 @@ launcher="$fake/.local/bin/clark"
 echo "1. instalação limpa"
 HOME="$fake" ./install.sh >/dev/null
 [ -x "$app/Contents/MacOS/Clark" ] || fail "o app não foi copiado"
+[ -s "$app/Contents/Resources/AppIcon.icns" ] || fail "o app foi copiado sem o ícone"
 codesign --verify --strict "$app" || fail "a assinatura quebrou na cópia"
 [ "$(HOME="$fake" "$launcher" --version)" = "$(dist/Clark.app/Contents/MacOS/Clark --version)" ] \
   || fail "clark --version"

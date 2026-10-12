@@ -95,6 +95,17 @@ enum ClarkMain {
         return nil
     }
 
+    /// `--export-icon`: grava o PNG e devolve o código de saída. nil quando a opção não veio.
+    static func exportIcon(for options: CLIOptions) -> Int32? {
+        guard let path = options.exportIcon else { return nil }
+        guard let png = AppIcon.png(size: options.iconSize),
+              (try? png.write(to: URL(fileURLWithPath: path))) != nil else {
+            FileHandle.standardError.write(Data("clark: o ícone não foi gravado em \(path)\n".utf8))
+            return 1
+        }
+        return 0
+    }
+
     static func run() {
         let home = NSHomeDirectory()
         var launchDirectory = FileManager.default.currentDirectoryPath
@@ -104,6 +115,10 @@ enum ClarkMain {
                                        launchDirectory: launchDirectory, home: home)
         if let text = immediateOutput(for: options) {
             print(text)
+            return
+        }
+        if let status = exportIcon(for: options) {
+            if status != 0 { exit(status) }
             return
         }
         let application = NSApplication.shared

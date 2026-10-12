@@ -55,7 +55,7 @@ mac/
 - Dependência direta única: SwiftTerm (MIT), fixada pela revisão `464df5207fc2432e16c9a23abe538187196daf5f` (tag `v1.19.0`, 2026-08-18), com `Package.resolved` versionado. Essa versão expõe `dataReceived`, `rangeChanged` e `send` como `open`, que são os ganchos de que o app precisa. O `v1.99.0` saiu três dias antes deste spec, moveu esses ganchos para uma classe privada e fica para depois.
 - O manifesto do SwiftTerm declara um plugin de build próprio (`SwiftTermBuildInfoPlugin`, que roda na compilação). Conferido na preparação do M1: o `Package.resolved` fixa o SwiftTerm e o `swift-argument-parser` 1.8.2 (Apple), usado só por um executável do SwiftTerm que o app não liga. `package-benchmark` e `swift-docc-plugin`, também declarados no manifesto, não são resolvidos. Qualquer pacote novo nesse arquivo é revisado antes de seguir.
 - O SwiftTerm traz um shader Metal, e o build padrão do SwiftPM exige o Metal Toolchain do Xcode para compilá-lo. Sem o toolchain, o `swiftpm.sh` usa `--build-system native`, que só copia o arquivo. O app desenha por CoreGraphics e não liga o renderizador Metal; o bundle de recursos do SwiftTerm não vai para o `Clark.app`.
-- Empacotamento: o `Clark.app` leva só o executável e o `Info.plist` (identificador `io.github.rafaelmgbh.clark`), com assinatura ad hoc e sem hardened runtime. O macOS cobra do CLARK as permissões que os programas dos agentes pedem (pastas protegidas, rede local, microfone, automação): o `Info.plist` traz os textos desses pedidos, e o hardened runtime exigiria um entitlement para cada um. Sem identidade de assinatura estável, cada compilação pode pedir as permissões de novo.
+- Empacotamento: o `Clark.app` (identificador `io.github.rafaelmgbh.clark`) leva o executável, o `Info.plist` e o ícone, em `Contents/Resources/AppIcon.icns`, que o `build.sh` monta com `Clark --export-icon` e `iconutil`. A assinatura é ad hoc e sem hardened runtime. O macOS cobra do CLARK as permissões que os programas dos agentes pedem (pastas protegidas, rede local, microfone, automação): o `Info.plist` traz os textos desses pedidos, e o hardened runtime exigiria um entitlement para cada um. Sem identidade de assinatura estável, cada compilação pode pedir as permissões de novo.
 - Licença MIT mantida. O README de `mac/` credita o original; a fonte pixel e os sprites derivam dele.
 
 ## Unidades
@@ -141,6 +141,8 @@ Quem autentica o `claude` por variável de ambiente precisa listá-la em `env_al
 
 **Cor.** Cabeçalho, card e dragão usam a cor da empresa. Agentes da mesma empresa escurecem em passos de 15% (0, 15, 30, 45 e recomeça). A paleta tem oito cores: duas empresas detectadas pela pasta podem cair na mesma, e `color` em `companies.json` desfaz o empate.
 
+**Menu de projetos.** O botão `PROJETO` da barra (⌘D) troca o seletor de pastas do original por um menu: `GLOBAL` (a home, empresa `AVULSO`), as empresas com seus projetos e `Outra pasta…` (o seletor do macOS). Escolher um item abre um agente naquela pasta e ela passa a ser a do ⌘N; com o limite de agentes atingido, só a pasta muda. A lista vem do disco a cada abertura do menu: as subpastas visíveis das `roots` e os `paths` declarados que existem, agrupados pelo nome que a resolução acima dá a cada um. Assim, tudo o que aparece numa empresa abre como agente dela; a pasta que resolveria para outra empresa (um `path` declarado dentro de outra, um link simbólico) fica de fora. Há um nível de aninhamento: a pasta sem `.git` que guarda pelo menos um repositório vira submenu.
+
 ## Segurança
 
 | Achado no original | Tratamento |
@@ -187,7 +189,7 @@ Porta fiel das funções do original, desenhadas em CoreGraphics com antialias d
 - `DragonSky`: um dragão por agente andando pela janela, ligável e desligável.
 - Tela vazia com o mascote dormindo e `PRESS START`.
 - Três temas (`dark`, `white`, `magick`) com as paletas do original, inclusive as 16 cores do terminal, trocados ao vivo.
-- Ícone gerado por `make_icon_surface`; o `build.sh` usa `--export-icon` e `iconutil` para o `.icns`.
+- Ícone gerado por `make_icon_surface`; o `build.sh` usa `--export-icon` e `iconutil` para o `.icns`. Adiantado para o M1, a pedido: o desenho segue a grade dos ícones do macOS (placa de 824 num quadro de 1024, raio de 22,5%), porque fora dela o sistema encolhe o ícone dentro de uma moldura cinza. Abaixo de 128 px o desenho grande é reduzido.
 
 O tique de animação é de 100 ms, como no original, e só redesenha o que está visível.
 
@@ -201,14 +203,14 @@ O tique de animação é de 100 ms, como no original, e só redesenha o que est�
 | ⌘L | alternar foco e grade | Ctrl+Shift+L |
 | ⌘⇧[ e ⌘⇧] | agente anterior e próximo | Ctrl+Shift+← e → |
 | ⌘1 a ⌘9 | pular para o agente N | Alt+1 a 9 |
-| ⌘D | trocar pasta | Ctrl+Shift+D |
+| ⌘D | abrir agente num projeto (menu `PROJETO`) | Ctrl+Shift+D |
 | ⌘T | mostrar ou esconder a fila | Ctrl+Shift+T |
 | ⌘C e ⌘V | copiar e colar | Ctrl+Shift+C e V |
 | ⌘+, ⌘− e ⌘0 | tamanho da fonte | Ctrl+Shift++, − e 0 |
 | duplo clique no cabeçalho | renomear (20 caracteres) | igual |
 | Enter em GAME OVER | reabrir o agente | igual |
 
-Linha de comando, pelo atalho `clark`: `clark [PASTA] [-n N] [--no-splash] [--fresh] [--version] [-- argumentos do claude]`. `--no-splash` é aceito desde o M1 e passa a ter efeito no M3. Com o CLARK já aberto, o atalho só traz a janela para a frente e as opções são ignoradas.
+Linha de comando, pelo atalho `clark`: `clark [PASTA] [-n N] [--no-splash] [--fresh] [--version] [-- argumentos do claude]`. `--no-splash` é aceito desde o M1 e passa a ter efeito no M3. `--export-icon ARQUIVO` e `--icon-size N` (16 a 1024, padrão 256) gravam o ícone em PNG e saem sem abrir a janela; servem ao `build.sh` e ficam fora do texto de ajuda. Com o CLARK já aberto, o atalho só traz a janela para a frente e as opções são ignoradas.
 
 ## Configuração
 
@@ -268,4 +270,4 @@ Pronto quando:
 
 **M2 — Fila.** Pronto quando o painel mostra as duas fontes num repo com fila aberta, `ABRIR` cria o agente na worktree, a fila indisponível aparece tratada e os testes de `QueueStatus` passam.
 
-**M3 — Retrô completo.** Pronto quando a splash, o mascote animado nos cabeçalhos e cards, os dragões, a tela vazia, o GAME OVER, os três temas com troca ao vivo e o ícone gerado estão no app, comparados lado a lado com as capturas em `docs/` do original.
+**M3 — Retrô completo.** Pronto quando a splash, o mascote animado nos cabeçalhos e cards, os dragões, a tela vazia, o GAME OVER e os três temas com troca ao vivo estão no app (o ícone gerado já entrou no M1), comparados lado a lado com as capturas em `docs/` do original.

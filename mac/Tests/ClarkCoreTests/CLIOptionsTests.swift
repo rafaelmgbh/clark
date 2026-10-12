@@ -37,6 +37,24 @@ final class CLIOptionsTests: XCTestCase {
         XCTAssertEqual(mixed.directory, "/work/proj")
     }
 
+    func testExportIconTakesAFileAndASize() {
+        XCTAssertNil(parse().exportIcon)
+        XCTAssertEqual(parse().iconSize, 256)
+        let options = parse("--export-icon", "dist/icone.png", "--icon-size", "64")
+        XCTAssertEqual(options.exportIcon, "/work/dist/icone.png")
+        XCTAssertEqual(options.iconSize, 64)
+        XCTAssertNil(options.directory, "o arquivo do ícone não é a PASTA")
+        XCTAssertEqual(parse("--export-icon", "i.png", "--launch-dir", "/term").exportIcon, "/term/i.png")
+        XCTAssertEqual(parse("--icon-size", "512", "--export-icon", "/abs/i.png").exportIcon, "/abs/i.png")
+        XCTAssertNil(parse("--export-icon").exportIcon)
+    }
+
+    func testIconSizeIsClamped() {
+        XCTAssertEqual(parse("--icon-size", "4").iconSize, 16)
+        XCTAssertEqual(parse("--icon-size", "99999").iconSize, 1024)
+        XCTAssertEqual(parse("--icon-size").iconSize, 256)
+    }
+
     func testFlags() {
         let options = parse("--fresh", "--no-splash", "--version", "-h")
         XCTAssertTrue(options.fresh)

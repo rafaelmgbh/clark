@@ -20,7 +20,7 @@ essa empresa pode ver.
 
 ```bash
 cd mac
-./build.sh      # gera dist/Clark.app
+./build.sh      # gera dist/Clark.app, com o ícone
 ./install.sh    # copia para ~/Applications e cria o atalho ~/.local/bin/clark
 ```
 
@@ -28,6 +28,9 @@ O `install.sh` não sobrescreve um `clark` que não seja o dele e não instala c
 
 Para remover, apague `~/Applications/Clark.app` e `~/.local/bin/clark`. As preferências ficam em
 `~/.config/clark/`.
+
+O ícone é o dragão do CLARK, desenhado pelo próprio app: o `build.sh` chama
+`Clark --export-icon ARQUIVO --icon-size N` para cada tamanho e monta o `.icns` com o `iconutil`.
 
 O app é assinado só localmente (assinatura ad hoc). Para o macOS, cada compilação é um app novo:
 depois de recompilar, ele pode pedir de novo as permissões de notificação e de acesso a pastas.
@@ -40,7 +43,7 @@ clark [PASTA] [-n N] [--fresh] [--version] [-- argumentos extras do claude]
 
 | Opção | O que faz |
 |-------|-----------|
-| `PASTA` | Pasta dos agentes novos. Sem ela, vale a última usada. |
+| `PASTA` | Pasta dos agentes novos. Sem ela, vale a do último projeto aberto. |
 | `-n N` | Abre N agentes novos, de 0 a 16. |
 | `--fresh` | Não restaura os agentes da última vez. |
 | `--` | O que vier depois vai para o `claude` de todos os agentes. |
@@ -50,12 +53,26 @@ um agente não existe mais, ele abre na home, numa conversa nova.
 
 Com o CLARK já aberto, `clark` só traz a janela para a frente: as opções são ignoradas.
 
+### Projetos
+
+O botão `PROJETO` da barra (⌘D) lista as empresas e, dentro de cada uma, as pastas de projeto.
+Escolher um projeto abre um agente nele, como se o `claude` tivesse sido chamado dentro da pasta.
+
+- `GLOBAL` abre o agente na home, sem projeto. A empresa dele é `AVULSO`.
+- O primeiro item de cada empresa é a pasta da própria empresa.
+- Uma pasta que não é repositório git e guarda repositórios vira um submenu com o que há dentro dela.
+- `Outra pasta…` abre o seletor de pastas do macOS.
+
+A lista é lida do disco cada vez que o menu abre: são as subpastas das `roots` e os `paths` do
+`companies.json` (veja [Empresas](#empresas)). O ⌘N repete o último projeto escolhido. Com os 16
+agentes abertos, escolher um projeto só troca a pasta do próximo agente.
+
 ### Atalhos
 
 | Atalho | Ação |
 |--------|------|
 | ⌘N | Novo agente |
-| ⌘D | Trocar a pasta dos agentes novos |
+| ⌘D | Abrir um agente num projeto |
 | ⌘W | Fechar o agente em foco |
 | ⌘L | Alternar entre foco e grade |
 | ⌘↩ | Zoom no agente |
@@ -156,8 +173,7 @@ O desenho do projeto está em [`docs/specs/2026-10-11-clark-mac-design.md`](docs
 
 ## Limitações do M1
 
-- Só o tema `dark`. Os temas `white` e `magick`, a tela de abertura, os dragões e o ícone do app
-  ficam para o M3.
+- Só o tema `dark`. Os temas `white` e `magick`, a tela de abertura e os dragões ficam para o M3.
 - A fila de trabalho (`/paralelo` e `/to-dev`) fica para o M2.
 - Renomear um agente não muda o `CLARK_AGENT` do processo que já está rodando.
 - Os avisos da interface saem sem acento, porque a fonte de pixels só tem ASCII.

@@ -3,6 +3,8 @@ public struct CLIOptions: Equatable, Sendable {
     public static let usage =
         "uso: clark [PASTA] [-n N] [--no-splash] [--fresh] [--version] [-- argumentos extras do claude]"
     public static let maxAgents = 16
+    /// Lados aceitos em `--icon-size`, em pixels.
+    public static let iconSizeRange = 16...1024
 
     public var directory: String?
     /// Agentes novos a abrir, de 0 a 16.
@@ -12,6 +14,10 @@ public struct CLIOptions: Equatable, Sendable {
     public var fresh = false
     public var showVersion = false
     public var showHelp = false
+    /// `--export-icon ARQUIVO`: grava o ícone do app em PNG e sai. É como o build.sh monta o `.icns`.
+    public var exportIcon: String?
+    /// `--icon-size N`: lado do PNG do `--export-icon`.
+    public var iconSize = 256
     public var claudeArgs: [String] = []
 
     public init() {}
@@ -27,6 +33,7 @@ public struct CLIOptions: Equatable, Sendable {
         }
         var base = launchDirectory
         var positional: String?
+        var iconFile: String?
         var index = 0
         while index < own.count {
             let argument = own[index]
@@ -46,6 +53,16 @@ public struct CLIOptions: Equatable, Sendable {
                 } else {
                     options.count = 1
                 }
+            case "--export-icon":
+                if index + 1 < own.count {
+                    iconFile = own[index + 1]
+                    index += 1
+                }
+            case "--icon-size":
+                if index + 1 < own.count, let size = Int(own[index + 1]) {
+                    options.iconSize = max(iconSizeRange.lowerBound, min(iconSizeRange.upperBound, size))
+                    index += 1
+                }
             case "--launch-dir":
                 if index + 1 < own.count {
                     base = own[index + 1]
@@ -58,6 +75,9 @@ public struct CLIOptions: Equatable, Sendable {
         }
         if let positional {
             options.directory = PathTools.absolute(positional, base: base, home: home)
+        }
+        if let iconFile {
+            options.exportIcon = PathTools.absolute(iconFile, base: base, home: home)
         }
         return options
     }
