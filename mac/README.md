@@ -67,8 +67,14 @@ O CLARK começa no `GLOBAL`: um agente na home, para o que não é de projeto ne
 - `GLOBAL` abre um agente na home.
 - Cada empresa é um submenu com os projetos dela. Escolher um abre um agente na pasta do projeto.
 - Projeto é a pasta com repositório git ou com instruções para agente (`CLAUDE.md`, `AGENTS.md`,
-  `.claude`), até quatro níveis abaixo da pasta da empresa. Os do primeiro nível vêm soltos; os mais
-  fundos ficam sob o nome das pastas do caminho (`Sistemas › Vendas`).
+  `.claude`), até quatro níveis abaixo da pasta da empresa. Os do primeiro nível vêm soltos. Os mais
+  fundos ficam num submenu com o nome da pasta que os guarda (`Vendas ▸`). Pasta que só organiza
+  (`projects`, `projetos`, `repos`, `apps`, `packages`, `src`) não entra no nome. Se dois submenus
+  ficariam com o mesmo nome, entram as pastas de fora até eles se distinguirem (`Sistemas › Vendas`).
+- O projeto que tem outros projetos dentro vira o submenu deles e abre pela primeira linha desse
+  submenu.
+- `Worktrees` junta as worktrees do git. Cada uma é um branch de um projeto que já está na lista,
+  e por isso não aparece no meio dos projetos. A worktree com apelido fica com os apelidados.
 - `Outras pastas` junta as pastas do primeiro nível que não são projeto, e `Pasta da empresa` abre
   na pasta da própria empresa.
 - A empresa que é ela mesma um repositório, ou que não tem nada dentro, abre direto, sem submenu.
@@ -113,6 +119,25 @@ uma só: pedir o diff de outro agente troca o conteúdo dela.
   mostra para onde o link aponta, não o conteúdo do destino.
 - Diff com mais de 1 MiB ou de 20 mil linhas é cortado, com um aviso no fim.
 
+### Consumo do plano
+
+Se o [AiUsageBar](https://github.com/rafaelmgbh/ai-usage-bar) roda no mesmo Mac, a barra superior
+mostra o consumo do plano do Claude, entre as contagens e os botões: `5H` e `7D`, cada um com uma
+barra de dez blocos e o percentual. A cor é verde até 79%, amarela de 80% a 94% e vermelha de 95%
+em diante. A dica do medidor diz em quanto tempo cada janela renova e de quando é a leitura.
+
+O CLARK não consulta a Anthropic nem lê credencial. Uma vez por minuto, e sempre que você volta
+para o app, ele relê o arquivo que o AiUsageBar mantém em
+`~/Library/Caches/io.github.rafaelmgbh.ai-usage-bar/claude-usage.json`, que só tem percentuais e
+horas de renovação. Vale a conta padrão do Claude Code; sem ela no arquivo, a conta lida por último.
+
+- Leitura com mais de 15 minutos sai apagada; com mais de um dia, o medidor some.
+- Janela que renovou depois da leitura mostra `0%`. Se a leitura já era velha, mostra `--`: o que
+  foi gasto desde a renovação ninguém leu.
+- Com a barra apertada, o medidor perde as barras e fica só com os números. Sem espaço nem para
+  eles, some: as contagens de agentes têm a preferência.
+- Sem o AiUsageBar não há medidor, e nada mais muda.
+
 ### Atalhos
 
 | Atalho | Ação |
@@ -138,6 +163,7 @@ Dois cliques no cabeçalho do agente renomeiam. O botão `[ ]` do cabeçalho dá
 | `WORKING` | O agente está escrevendo. |
 | `DONE!` | Terminou um trabalho e espera você. O Dock mostra a contagem; com o CLARK em segundo plano, vem também uma notificação. |
 | `IDLE` | Parado. |
+| `SHELL` | Parado, com um comando que o Claude deixou rodando em segundo plano: o `1 shell` do rodapé do Claude Code. Na barra superior conta em `WORKING`. |
 | `GAME OVER` | O processo saiu. Enter abre de novo na mesma conversa. |
 
 A faixa vermelha `SEM PERMISSOES` aparece no agente aberto com

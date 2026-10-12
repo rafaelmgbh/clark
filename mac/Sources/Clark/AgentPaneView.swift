@@ -113,7 +113,12 @@ final class AgentPaneView: PixelView {
     private let closeButton = PixelButton(title: "X", style: .miniClose, toolTip: "Fechar (⌘W)")
     private let launch: AgentLaunch
     private var terminalAppearance: TerminalAppearance
+    /// De quanto em quanto tempo o agente parado relê o que o Claude Code diz da sessão.
+    static let activityInterval = 1.0
     private let clock: () -> Double
+    private var activityAt = -Double.infinity
+    /// Quando o processo abriu, em segundos desde 1970. Arquivo de sessão mais velho é de outro processo.
+    private var spawnedAt = 0.0
     private var previewAt = -Double.infinity
     /// Estado na última vez em que o painel avisou que mudou.
     private var reportedState = AgentState.boot
@@ -181,6 +186,7 @@ final class AgentPaneView: PixelView {
                                           company: company, agentName: name)
         removedVariables = environment.removed
         machine.spawned(now: now)
+        spawnedAt = Date().timeIntervalSince1970
         if let claude = launch.claudePath {
             let configDir = SessionLocator.configDir(environment: environment.variables, home: launch.home)
             let sessionExists = SessionLocator.sessionExists(sessionID, configDir: configDir)
@@ -276,9 +282,20 @@ final class AgentPaneView: PixelView {
     func tick(now: Double) {
         let before = machine.state
         let notify = machine.tick(now: now, watched: delegate?.paneIsWatched(self) ?? false)
+        refreshActivity(now: now)
         if machine.state != before { changed() }
         if notify { delegate?.paneNeedsAttention(self) }
         if StateLabel.isAnimated(machine.state) { header.time = now }
+    }
+
+    /// Parado, o terminal não mostra se sobrou comando rodando em segundo plano: quem diz é o Claude Code.
+    /// Trabalhando, a saída do terminal basta e o arquivo nem é lido.
+    private func refreshActivity(now: Double) {
+        guard let configDir = claudeConfigDir, [.idle, .shell, .done].contains(machine.state),
+              now - activityAt >= Self.activityInterval else { return }
+        activityAt = now
+        let activity = SessionActivity.read(configDir: configDir, pid: terminal.process.shellPid, since: spawnedAt)
+        machine.backgroundShell(activity == .shell)
     }
 
     /// O painel ganhou o foco do teclado.

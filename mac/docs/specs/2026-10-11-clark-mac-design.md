@@ -67,7 +67,8 @@ mac/
 | `Config` | Lê e grava `config.json` com permissão `0600`; valida cada campo e cai no padrão quando inválido; preserva chaves desconhecidas. | Foundation |
 | `CompanyResolver` | Caminho → empresa (nome, cor, `env_allow`). | `companies.json` |
 | `EnvPolicy` | Ambiente base + empresa → ambiente do agente e lista dos nomes removidos. | `CompanyResolver` |
-| `AgentStateMachine` | Estados BOOT, WORKING, IDLE, DONE, EXITED a partir de eventos com relógio injetado. | nada |
+| `AgentStateMachine` | Estados BOOT, WORKING, IDLE, SHELL, DONE, EXITED a partir de eventos com relógio injetado. | nada |
+| `SessionActivity` | O que o Claude Code diz que a sessão de um processo está fazendo (`busy`, `idle`, `shell`), lido do arquivo de sessão dele. | sistema de arquivos |
 | `SessionLocator` | Decide entre `--resume` e `--session-id`; valida UUID. | sistema de arquivos |
 | `ClaudeCommand` | Monta o argv do agente; detecta flags de sessão e de permissão perigosa nos argumentos extras. | `SessionLocator` |
 | `QueueStatus` | Decodifica o JSON de `fila.py status --json` e de `runstate.py find` e `report`. | Foundation |
@@ -75,6 +76,7 @@ mac/
 | `GridLayout` | Linhas e colunas da grade para N painéis e o tamanho da janela. | nada |
 | `ProjectCatalog`, `ProjectNaming` | Empresas e projetos que existem no disco, para o menu `PROJETO`; nome do projeto de uma pasta, com os apelidos. | `CompanyResolver`, sistema de arquivos |
 | `SessionDigest` | Resumo da última conversa do Claude Code numa pasta, tirado do fim do arquivo da conversa. | sistema de arquivos |
+| `UsageMeter` | Consumo do plano do Claude lido do arquivo de cache do AiUsageBar: janelas de 5 horas e de 7 dias, nível, idade da leitura e o texto da dica. | sistema de arquivos |
 | `GitDiff`, `GitLocator` | Interpreta a saída do git em arquivos com estado e contagem de linhas, soma os totais e classifica as linhas de um diff; acha o `git` no `PATH` capturado. | sistema de arquivos |
 
 ### Clark (AppKit)
@@ -85,6 +87,7 @@ mac/
 | `AgentPaneView` | Cabeçalho desenhado + subclasse de `LocalProcessTerminalView`; traduz eventos do terminal para a máquina de estado. |
 | `AgentCardView` | Card da lista lateral: nome, estado, projeto, empresa, caminho e as duas últimas linhas úteis do terminal. |
 | `SessionDigestView` | Faixa `ULTIMA SESSAO` entre o cabeçalho e o terminal do agente que começa conversa nova num projeto. |
+| `TopBarView`, `UsageMeterView` | Barra superior: logo, contagens por estado, medidor do consumo do plano e os botões `PROJETO`, layout e `+ AGENT`. |
 | `GitRunner` | Roda o git na pasta de um agente, só para ler, com tempo e tamanho limitados. |
 | `DiffMonitor` | Lê o diff da pasta de um agente fora da thread principal e guarda o último resultado. |
 | `DiffBadge`, `DiffWindowController` | Resumo do diff no cabeçalho e no card; janela única com a lista de arquivos e o diff do escolhido. |
@@ -114,6 +117,10 @@ O `claude` é procurado no `PATH` capturado e depois em `~/.local/bin`, `~/.clau
 | Processo termina | EXITED, tela GAME OVER; Enter reabre na mesma conversa. |
 
 "Observado" significa painel com foco e janela ativa.
+
+**Comando em segundo plano.** É o que o CLARK acrescenta ao original. Com o turno encerrado e um comando rodando em segundo plano, a tela do Claude Code fica parada e a tabela acima diria IDLE. Parado (em IDLE, SHELL ou DONE), o agente lê uma vez por segundo `<config do claude>/sessions/<pid>.json`, o arquivo em que o Claude Code grava o `status` da sessão do processo: `busy`, `idle` ou `shell`. Com `shell`, onde a tabela diz IDLE o estado é SHELL: rótulo `SHELL` no ciano do terminal, a cor do `1 shell` do rodapé do Claude Code, contado em WORKING na barra superior. O DONE e a notificação não mudam, porque o turno acabou e o agente espera você; quem olha para ele vê o DONE dar lugar ao SHELL. Quando o comando termina, o `status` deixa de ser `shell` e o estado volta a IDLE, ou o Claude Code retoma o turno e a saída do terminal leva a WORKING.
+
+O arquivo só vale se é um arquivo comum de até 64 KiB, nomeia o mesmo `pid` e foi gravado depois que o processo abriu; mais velho que isso, sobrou de outro processo que teve o mesmo número. Ele é um detalhe interno do Claude Code, não uma interface: sem o arquivo, ou com um `status` que o CLARK não conhece, o estado sai só da saída do terminal, como antes. O CLARK só lê esse arquivo, e não o procura para o agente que abriu o shell por falta do `claude`.
 
 **Notificação.** Só com a janela inativa: notificação do macOS com `CLARK · <agente>`, selo no Dock com a contagem de DONE e pedido de atenção do app.
 
@@ -152,9 +159,13 @@ Quem autentica o `claude` por variável de ambiente precisa listá-la em `env_al
 
 **Início.** O CLARK restaura os agentes salvos. Sem nenhum, e sem pedido na linha de comando, abre um agente no `GLOBAL`. O ⌘N e o `+ AGENT` abrem sempre no `GLOBAL`; o ⌘⇧N (`Novo agente nesta pasta`) repete a pasta do agente em foco. Não existe mais pasta padrão: o `cwd` do `config.json` é preservado no arquivo e ignorado.
 
-**Menu de projetos.** O botão `PROJETO` da barra (⌘D) troca o seletor de pastas do original por um menu: `GLOBAL`, as empresas e `Outra pasta…` (o seletor do macOS). Cada empresa é um submenu com, de cima para baixo: os projetos apelidados; os projetos do primeiro nível; os mais fundos, sob um título com as pastas do caminho (`Sistemas › Vendas`); `Outras pastas`, com as pastas do primeiro nível que não são projeto; e `Pasta da empresa`. A empresa de uma pasta só que é repositório, ou que não tem nada dentro, abre direto. Escolher um item abre um agente naquela pasta; com o limite de agentes atingido, nada abre e a barra avisa.
+**Menu de projetos.** O botão `PROJETO` da barra (⌘D) troca o seletor de pastas do original por um menu: `GLOBAL`, as empresas e `Outra pasta…` (o seletor do macOS). Cada empresa é um submenu com, de cima para baixo: os projetos apelidados; os projetos do primeiro nível e, com eles, um submenu para cada pasta que guarda projetos mais fundos; `Worktrees`, com as worktrees do git; `Outras pastas`, com as pastas do primeiro nível que não são projeto; e `Pasta da empresa`. A empresa de uma pasta só que é repositório, ou que não tem nada dentro, abre direto. Escolher um item abre um agente naquela pasta; com o limite de agentes atingido, nada abre e a barra avisa.
 
-Projeto é a pasta com `.git` ou com instruções para agente (`CLAUDE.md`, `AGENTS.md`, `.claude`). A busca desce até quatro níveis abaixo da pasta da empresa, em largura, e para depois de ler 4.000 pastas; não entra em repositório, em pasta oculta nem em pasta de dependências ou de build (`node_modules`, `vendor`, `venv`, `dist`, `build`, `target`, `__pycache__`, `Pods`, `DerivedData`). A lista vem do disco a cada abertura do menu: as subpastas visíveis das `roots` e os `paths` declarados que existem, agrupados pelo nome que a resolução acima dá a cada um. Assim, tudo o que aparece numa empresa abre como agente dela; a pasta que resolveria para outra empresa (um `path` declarado dentro de outra, um link simbólico) fica de fora, e a mesma pasta alcançada por dois caminhos entra uma vez. O tipo de cada entrada sai da própria listagem do diretório, e só link simbólico passa por `realpath`: numa árvore de 66 projetos e 6.800 subpastas, o menu monta em 70 ms.
+**Grupos.** O submenu de um grupo leva o nome da pasta que guarda os projetos (`Vendas`). Pasta que só organiza (`projects`, `projetos`, `repos`, `apps`, `packages`, `src`) não dá nome: o grupo fica com o nome da pasta acima dela. Quando dois grupos da mesma empresa ficariam com o mesmo nome, o título ganha as pastas de fora, da mais próxima para a mais distante, até eles se distinguirem (`Sistemas › Vendas`); a pasta que só organiza entra nessa hora (`Projects › Erp`). O projeto que guarda outros projetos não fica solto: é a primeira linha do submenu do grupo dele, separada das demais. A dica de cada grupo é o caminho da pasta. Os nomes vêm das pastas e só mudam por apelido: não há arquivo de mapeamento para manter.
+
+**Worktrees.** A pasta cujo `.git` é um arquivo com `gitdir:` apontando para `<repositório>/.git/worktrees/<nome>` é uma worktree: um branch de um projeto que já está na lista. Ela sai do meio dos projetos e vai para o submenu `Worktrees`; com apelido, fica só com os apelidados. O `.git` em arquivo que aponta para outro lugar (um submódulo, por exemplo) segue como projeto. Do arquivo são lidos no máximo 4 KiB, e a busca não entra em worktree.
+
+Projeto é a pasta com `.git` ou com instruções para agente (`CLAUDE.md`, `AGENTS.md`, `.claude`). A busca desce até quatro níveis abaixo da pasta da empresa, em largura, e para depois de ler 4.000 pastas; não entra em repositório, em pasta oculta nem em pasta de dependências ou de build (`node_modules`, `vendor`, `venv`, `dist`, `build`, `target`, `__pycache__`, `Pods`, `DerivedData`). A lista vem do disco a cada abertura do menu: as subpastas visíveis das `roots` e os `paths` declarados que existem, agrupados pelo nome que a resolução acima dá a cada um. Assim, tudo o que aparece numa empresa abre como agente dela; a pasta que resolveria para outra empresa (um `path` declarado dentro de outra, um link simbólico) fica de fora, e a mesma pasta alcançada por dois caminhos entra uma vez. O tipo de cada entrada sai da própria listagem do diretório, e só link simbólico passa por `realpath`: numa árvore de 62 projetos e 6.800 subpastas, o menu monta em 70 a 120 ms na compilação de depuração, conforme a carga da máquina.
 
 **Apelidos.** `Apelidar projeto…`, no menu do cabeçalho e no menu `Agentes`, dá ao projeto um nome de até 40 caracteres. O apelido fica em `project_names` no `config.json`, pelo caminho da pasta que dá o nome ao projeto (o repositório), e vale para todo agente aberto nela ou numa subpasta. Texto vazio, ou igual ao nome arrumado da pasta, tira o apelido. O agente do `GLOBAL` não tem apelido.
 
@@ -173,6 +184,16 @@ Não existe no original. Cada agente mostra o que mudou no repositório da sua p
 **Quando lê.** Na abertura do agente, quando ele sai de WORKING, quando o app volta para a frente e no ⌘R, que relê todos os agentes. Não há leitura periódica. As leituras da lista passam por uma fila única, uma por vez, fora da thread principal; pedidos feitos durante uma leitura viram uma leitura só.
 
 **Limites.** O git tem 10 s para responder. A lista de arquivos vai até 4 MiB de saída e o diff de um arquivo até 1 MiB; a tela mostra até 20 mil linhas de 2 mil caracteres. O que passa disso é cortado, com aviso. Só os 200 primeiros arquivos não rastreados têm as linhas contadas, e só os de até 1 MiB.
+
+## Consumo do plano
+
+A barra superior mostra, entre as contagens e os botões, o consumo do plano do Claude: `5H` e `7D`, cada um com uma barra de dez blocos e o percentual. Qualquer consumo acende um bloco e a barra só enche em 100%. Os cortes de cor são os do AiUsageBar: verde até 79%, amarelo de 80% a 94%, vermelho de 95% em diante.
+
+**Fonte.** O CLARK não consulta a rede nem lê o Keychain para isso. Ele lê `~/Library/Caches/io.github.rafaelmgbh.ai-usage-bar/claude-usage.json`, o arquivo que o [AiUsageBar](https://github.com/rafaelmgbh/ai-usage-bar) regrava a cada 5 minutos, com uma entrada por conta: `fetchedAt` e, em `fiveHour` e `sevenDay`, `percent` e `resetsAt` (segundos desde 1970). Vale a entrada `Claude Code-credentials`, a conta padrão do Claude Code; sem ela, a de `fetchedAt` mais recente. A leitura acontece no primeiro tique, depois a cada 60 s e a cada volta ao app; do arquivo são lidos no máximo 64 KiB, e o que não tem a forma esperada é ignorado. A alternativa, o próprio CLARK consultar a API de uso com o token do Claude Code, foi descartada: poria uma credencial e um acesso de rede num app que hoje não tem nenhum dos dois, para repetir o que o AiUsageBar já faz.
+
+**Idade.** Leitura com mais de 15 minutos sai toda em cinza. Com mais de 24 horas o medidor some: é sobra de um AiUsageBar que não roda mais. A janela cujo `resetsAt` já passou mostra `0%` se a leitura é recente e `--` se é velha, porque o que foi gasto depois da renovação não foi lido. Sem o arquivo não há medidor.
+
+**Espaço.** As contagens de agentes têm a preferência. O medidor entra inteiro quando cabe entre elas e os botões com 16 px de cada lado; apertado, perde as barras e fica com os números; sem espaço nem para eles, some. A dica do medidor traz, por janela, o percentual e em quanto tempo ela renova, e de quando é a leitura.
 
 ## Segurança
 
@@ -278,7 +299,8 @@ Tudo em `~/.config/clark/`.
 
 - `EnvPolicy`: cada padrão de segredo remove; `env_allow` global e da empresa devolvem; variável liberada para uma empresa não aparece em outra; as variáveis de sessão do pai saem sempre.
 - `CompanyResolver`: prefixo mais longo vence; detecção automática sob `roots`; `AVULSO`; cor estável para o mesmo nome; `path` que cobre uma root gera aviso.
-- `AgentStateMachine`: cada linha da tabela de estado, com relógio injetado.
+- `AgentStateMachine`: cada linha da tabela de estado, com relógio injetado, e o SHELL em cada ponto em que ela diz IDLE.
+- `SessionActivity`: os três valores de `status`; valor desconhecido, `pid` de outro processo, arquivo mais velho que o processo, pasta ou pipe no lugar do arquivo e arquivo grande demais não dão resposta.
 - `SessionLocator` e `ClaudeCommand`: UUID inválido é trocado; `--resume` contra `--session-id`; flags de sessão nos extras suprimem as do app; detecção das flags de permissão.
 - `Config`: campo inválido cai no padrão; chave desconhecida sobrevive; arquivo gravado sai `0600`.
 - `QueueStatus`: amostras sintéticas no formato real dos dois helpers, sem dado de cliente; JSON truncado dá erro tratado.

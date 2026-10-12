@@ -791,6 +791,115 @@ final class MainWindowControllerTests: XCTestCase {
         XCTAssertEqual(fixture.notifier.done, ["AGENT 1"])
     }
 
+    // MARK: comando em segundo plano
+
+    /// Grava o arquivo em que o Claude Code diz o que a sessão do agente está fazendo.
+    @discardableResult
+    private func session(of pane: AgentPaneView, status: String, configDir: String = ".claude") -> String {
+        let pid = pane.terminal.process.shellPid
+        return fixture.temp.write("\(configDir)/sessions/\(pid).json",
+                                  "{\"pid\": \(pid), \"kind\": \"interactive\", \"status\": \"\(status)\"}")
+    }
+
+    func testAgentWithAShellInTheBackgroundShowsShellInsteadOfIdle() {
+        let controller = fixture.started(agents: 1, claude: fixture.fakeClaude("read x"))
+        let pane = controller.panes[0]
+        session(of: pane, status: "shell")
+        fixture.now += 5
+        controller.tick()
+        XCTAssertEqual(pane.state, .shell)
+        XCTAssertEqual(controller.sidebar.cards[0].snapshot.state, .shell)
+        XCTAssertEqual(controller.topBar.stats.working, 1)
+        XCTAssertEqual(controller.topBar.stats.idle, 0)
+        XCTAssertEqual(fixture.notifier.done, [])
+    }
+
+    func testShellIsRereadOncePerSecondUntilTheCommandEnds() throws {
+        let controller = fixture.started(agents: 1, claude: fixture.fakeClaude("read x"))
+        let pane = controller.panes[0]
+        let path = session(of: pane, status: "shell")
+        fixture.now += 5
+        controller.tick()
+        XCTAssertEqual(pane.state, .shell)
+
+        session(of: pane, status: "idle")
+        fixture.now += AgentPaneView.activityInterval / 2
+        controller.tick()
+        XCTAssertEqual(pane.state, .shell)
+        fixture.now += AgentPaneView.activityInterval / 2
+        controller.tick()
+        XCTAssertEqual(pane.state, .idle)
+        XCTAssertEqual(controller.topBar.stats.idle, 1)
+        XCTAssertEqual(controller.sidebar.cards[0].snapshot.state, .idle)
+
+        // O claude apaga o arquivo quando sai: sem ele, o agente está só parado.
+        session(of: pane, status: "shell")
+        fixture.now += AgentPaneView.activityInterval
+        controller.tick()
+        XCTAssertEqual(pane.state, .shell)
+        try FileManager.default.removeItem(atPath: path)
+        fixture.now += AgentPaneView.activityInterval
+        controller.tick()
+        XCTAssertEqual(pane.state, .idle)
+    }
+
+    func testTurnThatLeavesAShellRunningNotifiesAndThenShowsShell() {
+        let controller = fixture.started(agents: 1, claude: fixture.fakeClaude("read x"))
+        controller.isAppActive = { false }
+        controller.isWindowKey = { false }
+        let pane = controller.panes[0]
+        fixture.now += 5
+        controller.tick()
+        XCTAssertEqual(pane.state, .idle)
+
+        session(of: pane, status: "shell")
+        work(pane, in: controller, seconds: 4)
+        XCTAssertEqual(pane.state, .done)
+        XCTAssertEqual(fixture.notifier.done, ["AGENT 1"])
+
+        // Ao voltar para o agente, o DONE dá lugar ao SHELL sem passar pelo IDLE.
+        controller.isAppActive = { true }
+        controller.isWindowKey = { true }
+        controller.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification))
+        XCTAssertEqual(pane.state, .shell)
+    }
+
+    func testAgentWithoutClaudeDoesNotLookForASessionFile() {
+        let controller = fixture.started(agents: 1)
+        let pane = controller.panes[0]
+        session(of: pane, status: "shell")
+        fixture.now += 5
+        controller.tick()
+        XCTAssertEqual(pane.state, .idle)
+    }
+
+    func testSessionFileLeftByAnOlderProcessIsIgnored() throws {
+        let controller = fixture.started(agents: 1, claude: fixture.fakeClaude("read x"))
+        let pane = controller.panes[0]
+        let path = session(of: pane, status: "shell")
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -3600)],
+                                              ofItemAtPath: path)
+        fixture.now += 5
+        controller.tick()
+        XCTAssertEqual(pane.state, .idle)
+    }
+
+    func testSessionFileComesFromTheConfigFolderOfTheAgent() {
+        var environment = fixture.environment
+        environment["CLAUDE_CONFIG_DIR"] = fixture.home + "/outra-conta"
+        let controller = fixture.started(agents: 1, claude: fixture.fakeClaude("read x"), environment: environment)
+        let pane = controller.panes[0]
+        session(of: pane, status: "shell")
+        fixture.now += 5
+        controller.tick()
+        XCTAssertEqual(pane.state, .idle)
+
+        session(of: pane, status: "shell", configDir: "outra-conta")
+        fixture.now += AgentPaneView.activityInterval
+        controller.tick()
+        XCTAssertEqual(pane.state, .shell)
+    }
+
     func testClickingTheNotificationSelectsTheAgent() {
         let controller = fixture.started(agents: 3)
         fixture.notifier.onOpen?(controller.panes[0].sessionID)
@@ -848,15 +957,12 @@ final class MainWindowControllerTests: XCTestCase {
 
     // MARK: projetos
 
-    /// O menu PROJETO como texto: `>` marca um submenu, `#` o cabeçalho de uma seção, e os itens
-    /// de dentro vêm recuados.
+    /// O menu PROJETO como texto: `>` marca um submenu, e os itens de dentro vêm recuados.
     private func outline(_ menu: NSMenu, indent: String = "") -> [String] {
         menu.items.flatMap { item -> [String] in
             if item.isSeparatorItem { return [indent + "-"] }
-            if item.isSectionHeader { return [indent + "# " + item.title] }
-            let pad = indent + String(repeating: "  ", count: item.indentationLevel)
-            guard let submenu = item.submenu else { return [pad + item.title] }
-            return [pad + item.title + " >"] + outline(submenu, indent: pad + "  ")
+            guard let submenu = item.submenu else { return [indent + item.title] }
+            return [indent + item.title + " >"] + outline(submenu, indent: indent + "  ")
         }
     }
 
@@ -897,15 +1003,16 @@ final class MainWindowControllerTests: XCTestCase {
             "GLOBAL", "-",
             "acme >",
             "  Api", "  Portal Web",
-            "  # Clientes", "    Loja",
+            "  Clientes >", "    Loja",
             "  -",
             "  Outras pastas >", "    Clientes", "    Rascunhos",
             "  Pasta da empresa",
             "beta",
             "-", "Outra pasta…",
-        ], "o projeto fundo fica a um clique, sob o nome da pasta; empresa sem nada dentro abre direto")
+        ], "o projeto fundo fica no grupo da pasta em que está; empresa sem nada dentro abre direto")
         XCTAssertEqual(item(menu, "acme", "Api")?.toolTip, "~/Projetos/acme/api")
-        XCTAssertEqual(item(menu, "acme", "Loja")?.toolTip, "~/Projetos/acme/clientes/loja")
+        XCTAssertEqual(item(menu, "acme", "Clientes")?.toolTip, "~/Projetos/acme/clientes")
+        XCTAssertEqual(item(menu, "acme", "Clientes", "Loja")?.toolTip, "~/Projetos/acme/clientes/loja")
         XCTAssertEqual(item(menu, "acme", "Pasta da empresa")?.toolTip, "~/Projetos/acme")
         XCTAssertEqual(item(menu, "GLOBAL")?.toolTip, "~")
     }
@@ -950,11 +1057,39 @@ final class MainWindowControllerTests: XCTestCase {
         let menu = controller.projectMenu()
         choose(item(menu, "acme", "Pasta da empresa"))
         choose(item(menu, "acme", "Outras pastas", "Clientes"))
-        choose(item(menu, "acme", "Loja"))
+        choose(item(menu, "acme", "Clientes", "Loja"))
         XCTAssertEqual(controller.panes.map(\.directory),
                        [fixture.home + "/Projetos/acme", fixture.home + "/Projetos/acme/clientes", loja])
         XCTAssertEqual(Set(controller.panes.map(\.company.name)), ["acme"])
         XCTAssertEqual(controller.panes.map(\.project), ["Acme", "Clientes", "Loja"])
+    }
+
+    func testProjectMenuKeepsWorktreesApartAndOpensAGroupFolderFromItsGroup() {
+        let api = repository("Projetos/acme/api")
+        let chamado = fixture.home + "/Projetos/acme/api-431"
+        fixture.temp.write("Projetos/acme/api-431/.git", "gitdir: \(api)/.git/worktrees/api-431\n")
+        let suite = fixture.home + "/Projetos/acme/suite"
+        fixture.temp.write("Projetos/acme/suite/CLAUDE.md", "contexto\n")
+        let nucleo = repository("Projetos/acme/suite/nucleo")
+        let controller = fixture.started()
+        let menu = controller.projectMenu()
+        XCTAssertEqual(outline(menu), [
+            "GLOBAL", "-",
+            "acme >",
+            "  Api",
+            "  Suite >", "    Suite", "    -", "    Nucleo",
+            "  -",
+            "  Worktrees >", "    Api 431",
+            "  Pasta da empresa",
+            "-", "Outra pasta…",
+        ], "a worktree não se passa por projeto, e o projeto que guarda projetos é um grupo só")
+
+        choose(item(menu, "acme", "Suite", "Suite"))
+        choose(item(menu, "acme", "Suite", "Nucleo"))
+        choose(item(menu, "acme", "Worktrees", "Api 431"))
+        XCTAssertEqual(controller.panes.map(\.directory), [suite, nucleo, chamado])
+        XCTAssertEqual(controller.panes.map(\.project), ["Suite", "Nucleo", "Api 431"])
+        XCTAssertEqual(Set(controller.panes.map(\.company.name)), ["acme"])
     }
 
     func testGlobalOpensAnAgentAtHomeOutsideAnyCompany() {
@@ -1114,6 +1249,64 @@ final class MainWindowControllerTests: XCTestCase {
         let nickname = NSMenuItem(title: "", action: #selector(MainWindowController.nicknameProject(_:)),
                                   keyEquivalent: "")
         XCTAssertTrue(controller.validateMenuItem(nickname))
+    }
+
+    // MARK: consumo do plano
+
+    /// O arquivo que o AiUsageBar deixa no cache dele, na home de teste.
+    private func writeUsage(percent: Int, fetched: Double) {
+        fixture.temp.write("Library/Caches/io.github.rafaelmgbh.ai-usage-bar/claude-usage.json", """
+        {"Claude Code-credentials": {"fetchedAt": \(fetched), "fiveHour": {"percent": \(percent), "resetsAt": 9000}}}
+        """)
+    }
+
+    func testTopBarShowsTheUsageFromTheUsageBarCacheAndRereadsItOnceAMinute() {
+        let controller = fixture.started()
+        controller.wallClock = { 5000 }
+        controller.tick()
+        XCTAssertNil(controller.topBar.usage, "sem o arquivo do AiUsageBar não há medidor")
+
+        writeUsage(percent: 7, fetched: 4900)
+        fixture.now += MainWindowController.usageInterval - 1
+        controller.tick()
+        XCTAssertNil(controller.topBar.usage, "ainda não é hora de reler")
+        fixture.now += 1
+        controller.tick()
+        XCTAssertEqual(controller.topBar.usage,
+                       UsageMeter(gauges: [UsageMeter.Gauge(label: "5H", percent: 7, resetsIn: 4000)], age: 100))
+
+        writeUsage(percent: 9, fetched: 4950)
+        controller.tick()
+        XCTAssertEqual(controller.topBar.usage?.gauges.map(\.percent), [7])
+        fixture.now += MainWindowController.usageInterval
+        controller.tick()
+        XCTAssertEqual(controller.topBar.usage?.gauges.map(\.percent), [9])
+    }
+
+    func testComingBackToTheAppRereadsTheUsage() {
+        let controller = fixture.started()
+        controller.wallClock = { 5000 }
+        controller.tick()
+        writeUsage(percent: 7, fetched: 4900)
+        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: NSApplication.shared)
+        XCTAssertEqual(controller.topBar.usage?.gauges.map(\.percent), [7])
+        // A volta ao app conta como leitura: a próxima é um minuto depois dela.
+        writeUsage(percent: 9, fetched: 4950)
+        fixture.now += MainWindowController.usageInterval - 1
+        controller.tick()
+        XCTAssertEqual(controller.topBar.usage?.gauges.map(\.percent), [7])
+    }
+
+    func testUsageFileThatGoesAwayTakesTheMeterAway() {
+        let controller = fixture.started()
+        controller.wallClock = { 5000 }
+        writeUsage(percent: 7, fetched: 4900)
+        controller.tick()
+        XCTAssertNotNil(controller.topBar.usage)
+        try? FileManager.default.removeItem(atPath: UsageMeter.path(home: fixture.home))
+        fixture.now += MainWindowController.usageInterval
+        controller.tick()
+        XCTAssertNil(controller.topBar.usage)
     }
 
     // MARK: menu

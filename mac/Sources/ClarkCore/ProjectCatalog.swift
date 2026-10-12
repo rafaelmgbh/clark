@@ -12,14 +12,21 @@ public struct ProjectEntry: Equatable, Sendable {
     }
 }
 
-/// Projetos que estão na mesma pasta, abaixo do primeiro nível da empresa.
+/// Projetos que estão na mesma pasta, abaixo do primeiro nível da empresa: um submenu do menu PROJETO.
 public struct ProjectSection: Equatable, Sendable {
-    /// Caminho da pasta dentro da empresa, com os nomes arrumados: "Sistemas › Erp".
+    /// Nome arrumado da pasta que junta os projetos. As pastas de fora entram só para separar
+    /// dois grupos de mesmo nome: "Clientes › Erp".
     public let title: String
+    /// A pasta que dá o nome ao grupo.
+    public let path: String
+    /// A própria pasta do grupo, quando ela também é um projeto: abre de dentro do grupo.
+    public let folder: ProjectEntry?
     public let projects: [ProjectEntry]
 
-    public init(title: String, projects: [ProjectEntry]) {
+    public init(title: String, path: String, folder: ProjectEntry? = nil, projects: [ProjectEntry]) {
         self.title = title
+        self.path = path
+        self.folder = folder
         self.projects = projects
     }
 }
@@ -36,27 +43,33 @@ public struct ProjectGroup: Equatable, Sendable {
     public let projects: [ProjectEntry]
     /// Projetos mais fundos, juntos pela pasta em que estão.
     public let sections: [ProjectSection]
+    /// Worktrees do git, de qualquer nível: cada uma é um branch de um projeto, não outro projeto.
+    public let worktrees: [ProjectEntry]
     /// Pastas do primeiro nível que não são projeto.
     public let others: [ProjectEntry]
 
     public init(name: String, folders: [String], nicknamed: [ProjectEntry] = [], projects: [ProjectEntry] = [],
-                sections: [ProjectSection] = [], others: [ProjectEntry] = []) {
+                sections: [ProjectSection] = [], worktrees: [ProjectEntry] = [], others: [ProjectEntry] = []) {
         self.name = name
         self.folders = folders
         self.nicknamed = nicknamed
         self.projects = projects
         self.sections = sections
+        self.worktrees = worktrees
         self.others = others
     }
 
     /// Sem nada para escolher além das próprias pastas.
-    public var isBare: Bool { nicknamed.isEmpty && projects.isEmpty && sections.isEmpty && others.isEmpty }
+    public var isBare: Bool {
+        nicknamed.isEmpty && projects.isEmpty && sections.isEmpty && worktrees.isEmpty && others.isEmpty
+    }
 }
 
 extension CompanyResolver {
     /// Empresas e projetos que existem no disco agora. Projeto é a pasta com repositório git ou com
     /// contexto de IA (`CLAUDE.md`, `AGENTS.md`, `.claude`), procurada até `ProjectCatalog.maxDepth`
     /// níveis abaixo da pasta da empresa; a busca não entra em repositório nem em pasta de dependências.
+    /// A worktree do git sai numa lista à parte: é um branch de um projeto que já está na lista.
     /// Tudo o que aparece numa empresa abre como agente dela; a pasta que `resolve` daria a outra
     /// empresa fica de fora.
     /// - Parameters:
@@ -92,7 +105,7 @@ extension CompanyResolver {
                 // A empresa que é ela mesma um repositório abre inteira: o que há dentro é dela.
                 if !ProjectCatalog.isRepository(folder.path) {
                     queue.append(ProjectCatalog.Node(company: name, path: folder.path, canonical: folder.canonical,
-                                                     trail: []))
+                                                     trail: [], group: [], anchor: folder.path))
                 }
             }
         }
@@ -111,22 +124,29 @@ extension CompanyResolver {
                 guard resolve(canonicalPath: canonical).name == node.company,
                       seen.insert(canonical).inserted else { continue }
                 let level = node.trail.count + 1
-                let isRepository = ProjectCatalog.isRepository(path)
+                let repository = ProjectCatalog.repository(path)
                 let entry = ProjectEntry(name: ProjectNaming.tidy(folder), path: path)
                 if nicknames[canonical] == nil {
-                    if isRepository || ProjectCatalog.hasAIContext(path) {
+                    if repository == .worktree {
+                        found[node.company]?.worktrees.append(entry)
+                    } else if repository == .clone || ProjectCatalog.hasAIContext(path) {
                         if level == 1 {
                             found[node.company]?.projects.append(entry)
                         } else {
-                            found[node.company]?.sections[node.trail, default: []].append(entry)
+                            let empty = ProjectCatalog.Section(names: node.sectionNames, trail: node.trail)
+                            found[node.company]?.sections[node.sectionPath, default: empty].projects.append(entry)
                         }
                     } else if level == 1 {
                         found[node.company]?.others.append(entry)
                     }
                 }
-                if !isRepository, level < ProjectCatalog.maxDepth {
+                if repository == .none, level < ProjectCatalog.maxDepth {
+                    // A pasta que só organiza não dá nome: os projetos dela ficam no grupo da de fora.
+                    let names = ProjectCatalog.organizers.contains(folder.lowercased())
                     queue.append(ProjectCatalog.Node(company: node.company, path: path, canonical: canonical,
-                                                     trail: node.trail + [entry.name]))
+                                                     trail: node.trail + [entry.name],
+                                                     group: names ? node.group : node.group + [entry.name],
+                                                     anchor: names ? node.anchor : path))
                 }
             }
         }
@@ -137,15 +157,13 @@ extension CompanyResolver {
         }
 
         let groups = found.map { name, group in
-            ProjectGroup(name: name, folders: group.folders,
-                         nicknamed: group.nicknamed.sorted(by: ProjectCatalog.entriesInOrder),
-                         projects: group.projects.sorted(by: ProjectCatalog.entriesInOrder),
-                         sections: group.sections.keys.sorted(by: ProjectCatalog.trailsInOrder).map { trail in
-                             ProjectSection(title: trail.joined(separator: ProjectCatalog.trailSeparator),
-                                            projects: (group.sections[trail] ?? [])
-                                                .sorted(by: ProjectCatalog.entriesInOrder))
-                         },
-                         others: group.others.sorted(by: ProjectCatalog.entriesInOrder))
+            let arranged = ProjectCatalog.arrange(projects: group.projects, sections: group.sections)
+            return ProjectGroup(name: name, folders: group.folders,
+                                nicknamed: group.nicknamed.sorted(by: ProjectCatalog.entriesInOrder),
+                                projects: arranged.projects.sorted(by: ProjectCatalog.entriesInOrder),
+                                sections: arranged.sections,
+                                worktrees: group.worktrees.sorted(by: ProjectCatalog.entriesInOrder),
+                                others: group.others.sorted(by: ProjectCatalog.entriesInOrder))
         }
         // O grupo das pastas soltas vem por último: não é uma empresa.
         return groups.sorted { first, second in
@@ -163,6 +181,8 @@ public enum ProjectCatalog {
     /// Pastas lidas numa busca. Uma árvore comum fica bem abaixo disso.
     public static let maxListings = 4000
     static let trailSeparator = " › "
+    /// Pastas que só organizam o que há dentro: não dão nome a um grupo de projetos.
+    static let organizers: Set<String> = ["projects", "projetos", "repos", "apps", "packages", "src"]
     /// Pastas de dependências e de saída de build: grandes e sem projeto do usuário dentro.
     static let skipped: Set<String> = [
         "node_modules", "vendor", "venv", "dist", "build", "target", "__pycache__", "Pods", "DerivedData",
@@ -173,9 +193,19 @@ public enum ProjectCatalog {
         var folders: [String] = []
         var nicknamed: [ProjectEntry] = []
         var projects: [ProjectEntry] = []
-        /// Chave: os nomes arrumados das pastas entre a empresa e os projetos.
-        var sections: [[String]: [ProjectEntry]] = [:]
+        /// Chave: a pasta que dá o nome ao grupo.
+        var sections: [String: Section] = [:]
+        var worktrees: [ProjectEntry] = []
         var others: [ProjectEntry] = []
+    }
+
+    /// Projetos mais fundos que o primeiro nível, juntos pela pasta que dá o nome ao grupo.
+    struct Section {
+        /// Nomes arrumados das pastas que dão nome ao grupo, da de fora para a de dentro.
+        let names: [String]
+        /// Todas as pastas entre a empresa e os projetos: o nome por extenso.
+        let trail: [String]
+        var projects: [ProjectEntry] = []
     }
 
     /// Pasta que a busca ainda vai ler.
@@ -184,7 +214,26 @@ public enum ProjectCatalog {
         let path: String
         /// O caminho de verdade, sem link no meio.
         let canonical: String
+        /// Nomes arrumados das pastas entre a empresa e esta.
         let trail: [String]
+        /// O mesmo, sem as pastas que só organizam.
+        let group: [String]
+        /// A última pasta de `group`; a da empresa enquanto `group` está vazio.
+        let anchor: String
+
+        /// Grupo dos projetos que estão direto nesta pasta. Quando todas as pastas do caminho só
+        /// organizam, o grupo é o da própria pasta, com o nome que ela tem.
+        var sectionNames: [String] { group.isEmpty ? trail : group }
+        var sectionPath: String { group.isEmpty ? path : anchor }
+    }
+
+    /// O que o `.git` de uma pasta diz dela.
+    enum Repository {
+        case none
+        /// Repositório com a pasta do git dentro, ou em outro lugar: é um projeto.
+        case clone
+        /// Outro branch de um repositório, aberto numa pasta só dele.
+        case worktree
     }
 
     /// Subpasta de uma pasta lida.
@@ -230,7 +279,68 @@ public enum ProjectCatalog {
 
     /// Tem `.git`: pasta num clone, arquivo numa worktree.
     public static func isRepository(_ path: String) -> Bool {
-        FileManager.default.fileExists(atPath: path + "/.git")
+        repository(path) != .none
+    }
+
+    /// Na worktree o `.git` é um arquivo que aponta para `<repositório>/.git/worktrees/<nome>`.
+    /// Submódulo e clone com a pasta do git separada também têm o arquivo, apontando para outro lugar.
+    static func repository(_ path: String) -> Repository {
+        let pointer = path + "/.git"
+        var info = stat()
+        guard stat(pointer, &info) == 0 else { return .none }
+        guard info.st_mode & S_IFMT == S_IFREG, let handle = FileHandle(forReadingAtPath: pointer) else {
+            return .clone
+        }
+        defer { try? handle.close() }
+        let text = String(decoding: (try? handle.read(upToCount: 4096)) ?? Data(), as: UTF8.self)
+        for line in text.split(whereSeparator: \.isNewline) where line.hasPrefix("gitdir:") {
+            let folders = line.dropFirst("gitdir:".count).split(separator: "/")
+            return folders.dropLast().last == "worktrees" ? .worktree : .clone
+        }
+        return .clone
+    }
+
+    /// Fecha os grupos de uma empresa: a pasta de um grupo que também é projeto passa para dentro
+    /// dele, o grupo que fica sem projeto some, e cada um ganha o nome mais curto que o separa dos outros.
+    static func arrange(projects: [ProjectEntry],
+                        sections: [String: Section]) -> (projects: [ProjectEntry], sections: [ProjectSection]) {
+        var projects = projects
+        var sections = sections
+        var listedIn: [String: String] = [:]
+        for (path, section) in sections {
+            for entry in section.projects { listedIn[entry.path] = path }
+        }
+        var folders: [String: ProjectEntry] = [:]
+        // Do mais fundo para o mais raso: o grupo que cede a pasta de um grupo de dentro pode ficar
+        // vazio, e aí a pasta dele continua um projeto comum na lista em que estava.
+        let depth: (String) -> Int = { PathTools.components($0).count }
+        for path in sections.keys.sorted(by: { depth($0) == depth($1) ? $0 < $1 : depth($0) > depth($1) }) {
+            guard sections[path]?.projects.isEmpty == false else { continue }
+            if let index = projects.firstIndex(where: { $0.path == path }) {
+                folders[path] = projects.remove(at: index)
+            } else if let owner = listedIn[path],
+                      let index = sections[owner]?.projects.firstIndex(where: { $0.path == path }) {
+                folders[path] = sections[owner]?.projects.remove(at: index)
+            }
+        }
+        sections = sections.filter { !$0.value.projects.isEmpty }
+
+        let arranged = sections.map { path, section -> ProjectSection in
+            var title = section.trail.joined(separator: trailSeparator)
+            for count in 1...max(1, section.names.count) {
+                let suffix = section.names.suffix(count)
+                let isShared = sections.contains { $0.key != path && $0.value.names.suffix(count) == suffix }
+                if !isShared {
+                    title = suffix.joined(separator: trailSeparator)
+                    break
+                }
+            }
+            return ProjectSection(title: title, path: path, folder: folders[path],
+                                  projects: section.projects.sorted(by: entriesInOrder))
+        }
+        return (projects, arranged.sorted { first, second in
+            first.title == second.title ? inOrder(first.path, second.path) : inOrder(first.title, second.title)
+        })
     }
 
     /// Tem instruções para um agente de IA: alguém já trabalha com um agente nesta pasta.
@@ -245,11 +355,5 @@ public enum ProjectCatalog {
 
     static func entriesInOrder(_ first: ProjectEntry, _ second: ProjectEntry) -> Bool {
         first.name == second.name ? inOrder(first.path, second.path) : inOrder(first.name, second.name)
-    }
-
-    /// A pasta de fora antes das de dentro; irmãs na ordem do Finder.
-    static func trailsInOrder(_ first: [String], _ second: [String]) -> Bool {
-        for (one, other) in zip(first, second) where one != other { return inOrder(one, other) }
-        return first.count < second.count
     }
 }

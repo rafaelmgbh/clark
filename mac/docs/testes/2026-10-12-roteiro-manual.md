@@ -10,6 +10,7 @@ usa a tela, o teclado e a conta do `claude`. Nada aqui é automatizado.
 | Diff do agente (`dcea13e`) | 324 testes verdes, 8 mutações mortas, imagens renderizadas nos testes | nunca |
 | Menu de projetos (`443277d`) | coberto pelos testes | nunca; nem o clique no botão `PROJETO` |
 | Início no `GLOBAL`, menu por empresa, projeto no cabeçalho, apelidos e última sessão (commit seguinte ao `ab24420`) | 391 testes verdes, 7 mutações mortas, imagens renderizadas nos testes | nunca |
+| Menu com grupos por pasta e worktrees à parte, medidor de consumo na barra e estado `SHELL` (commit seguinte ao `721b889`) | 451 testes verdes, 30 mutações mortas (13 do menu e do medidor, 17 do `SHELL`), menu conferido contra as pastas reais, arquivo de sessão conferido num agente real | nunca |
 | Ícone do dragão (`7fa1ec6`) | coberto pelos testes | nunca |
 | Núcleo do M1 (`80cb7e8`) | coberto pelos testes | em uso, mas o roteiro da Task 15 do plano nunca foi rodado inteiro |
 | `Tests/packaging.sh` depois do diff | não rodou: exige o CLARK fechado | não se aplica |
@@ -144,9 +145,20 @@ a compilação com o diff: em 2026-10-11 o executável instalado era idêntico a
   é sempre `PROJETO`.
 
 - [ ] **B3. Submenu da empresa.** Abra uma empresa com vários projetos. Esperado, de cima para
-  baixo: os projetos do primeiro nível; os mais fundos sob um título com as pastas do caminho
-  (`Sistemas › Vendas`); `Outras pastas`; `Pasta da empresa`. Nada de `node_modules` nem de pasta
-  oculta. Passar o mouse num item mostra o caminho.
+  baixo: os apelidados; os projetos do primeiro nível e um submenu para cada pasta que guarda
+  projetos mais fundos, com o nome dela (`Vendas ▸`); `Worktrees ▸`; `Outras pastas ▸`;
+  `Pasta da empresa`. Nada de `node_modules` nem de pasta oculta. Passar o mouse num item mostra
+  o caminho.
+
+- [ ] **B3a. Grupo de uma pasta.** Abra o submenu de uma pasta que guarda vários projetos.
+  Esperado: os projetos dela, pelo nome da pasta de cada um. Se a própria pasta é um projeto, ela
+  é a primeira linha do submenu, separada das outras, e escolhê-la abre o agente nela. Uma pasta
+  `projects` no meio do caminho não aparece no nome do submenu.
+
+- [ ] **B3b. Worktrees.** Numa empresa com worktrees do git (`git worktree list` num dos
+  repositórios mostra mais de uma linha), abra `Worktrees ▸`. Esperado: só elas, e nenhuma no meio
+  dos projetos. Escolher uma abre o agente na pasta da worktree; `! git branch --show-current`
+  mostra o branch dela.
 
 - [ ] **B4. Abrir num projeto.** Escolha um projeto. Esperado: abre um agente novo naquela pasta, com
   o projeto grande na cor da empresa e a empresa em cinza: `AGENT 2  MEU PROJETO  EMPRESA`. O card da
@@ -214,12 +226,49 @@ com 17 passos. Nenhum deles foi registrado como rodado. Os que mais pesam, por o
 
 - [ ] **C6. Os outros passos da Task 15,** na ordem do plano.
 
-## D. Depois do teste
+## D. Consumo do plano, aviso de fim de turno e estado SHELL
 
-- [ ] **D1. `Tests/packaging.sh`.** Com o CLARK fechado (⌘Q), de dentro de `mac/`:
+Estes passos pedem o [AiUsageBar](https://github.com/rafaelmgbh/ai-usage-bar) rodando no mesmo Mac.
+
+- [ ] **D1. Medidor na barra.** Com a janela larga, olhe a barra superior. Esperado: entre as
+  contagens e o botão `PROJETO`, `5H` e `7D`, cada um com uma barra de dez blocos e o percentual.
+  Os números batem com o que o AiUsageBar mostra, com no máximo um minuto de atraso.
+
+- [ ] **D2. Dica.** Pare o mouse sobre o medidor. Esperado: o percentual de cada janela com
+  `renova em …` e a linha `Lido há N min pelo AiUsageBar`.
+
+- [ ] **D3. Barra apertada.** Estreite a janela aos poucos. Esperado: primeiro o medidor perde as
+  barras e fica só com os números; depois some. `AGENTS`, `WORKING`, `DONE` e `IDLE` só começam a
+  sumir depois dele.
+
+- [ ] **D4. Leitura velha.** Saia do AiUsageBar e espere 16 minutos (ou volte no dia seguinte).
+  Esperado: o medidor inteiro em cinza, e a dica com `(desatualizado)`. Reabra o AiUsageBar: em até
+  um minuto, ou ao voltar para o CLARK, as cores voltam.
+
+- [ ] **D5. Sem o arquivo.** Com o AiUsageBar fechado, renomeie
+  `~/Library/Caches/io.github.rafaelmgbh.ai-usage-bar/claude-usage.json` e volte para o CLARK.
+  Esperado: o medidor some e nada mais muda. Desfaça a troca de nome.
+
+- [ ] **D6. Um aviso só.** Com o AiUsageBar recompilado depois desta mudança, deixe um agente do
+  CLARK terminar um turno de mais de 10 s com outro app na frente. Esperado: chega o aviso do
+  CLARK e nenhum do AiUsageBar. Uma sessão do `claude` no iTerm continua avisando pelo AiUsageBar.
+
+- [ ] **D7. Comando em segundo plano.** Num agente, peça: `rode sleep 90 em segundo plano e me
+  devolva o controle`. Esperado: quando o turno acaba e o rodapé do Claude Code mostra `1 shell`,
+  o cabeçalho e o card do agente mostram `SHELL...` em ciano, e não `IDLE`; a barra superior conta
+  esse agente em `WORKING`. Quando o `sleep` termina, o Claude retoma o turno (`WORKING`) e o
+  agente acaba em `IDLE` ou `DONE!`, sem `SHELL`.
+
+- [ ] **D8. SHELL e o aviso.** Repita o D7 com outro app na frente. Esperado: o aviso de fim de
+  turno chega como sempre e o card fica em `DONE!`; ao voltar para o agente, ele passa a `SHELL...`
+  enquanto o `sleep` roda.
+
+## E. Depois do teste
+
+- [ ] **E1. `Tests/packaging.sh`.** Com o CLARK fechado (⌘Q), de dentro de `mac/`:
   `Tests/packaging.sh`. O script recusa rodar com o app aberto.
 
-- [ ] **D2. Limpeza.** `rm -rf /tmp/clark-diff /tmp/clark-limpo /tmp/clark-vazio` e feche os agentes
+- [ ] **E2. Limpeza.** `rm -rf /tmp/clark-diff /tmp/clark-limpo /tmp/clark-vazio` e feche os agentes
   dessas pastas antes de sair, para eles não voltarem na restauração.
 
 ## Resultado
@@ -249,6 +298,11 @@ E no que veio depois, também sem consulta:
 - Projeto é a pasta com git ou com instruções para agente, até quatro níveis abaixo da empresa.
 - O apelido é do repositório e vale nas subpastas; fica no `config.json`.
 - A última sessão sai do arquivo da conversa, sem modelo, e só aparece em conversa nova de projeto.
+- No menu, cada pasta com projetos vira um submenu com o nome dela; worktree do git fica em
+  `Worktrees`, fora da lista de projetos.
+- O medidor de consumo lê o arquivo do AiUsageBar, sem rede e sem credencial no CLARK; os limites
+  por modelo ficam de fora.
+- `SHELL` é um estado próprio, em ciano e com os pontos andando, e conta em `WORKING` na barra.
 - A faixa some na primeira tecla, e não fica guardada para rever.
 - Card da lista lateral mais alto (104 px), com o projeto numa linha própria.
 

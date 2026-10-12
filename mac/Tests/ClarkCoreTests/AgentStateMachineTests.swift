@@ -151,6 +151,90 @@ final class AgentStateMachineTests: XCTestCase {
         XCTAssertEqual(machine.state, .idle)
     }
 
+    // MARK: comando em segundo plano
+
+    func testBackgroundShellTurnsIdleIntoShellAndBack() {
+        var machine = idleMachine()
+        machine.backgroundShell(true)
+        XCTAssertEqual(machine.state, .shell)
+        XCTAssertFalse(machine.tick(now: 60, watched: false))
+        XCTAssertEqual(machine.state, .shell)
+        machine.backgroundShell(false)
+        XCTAssertEqual(machine.state, .idle)
+    }
+
+    func testOutputDuringShellIsWorkAndShortWorkGoesBackToShell() {
+        var machine = idleMachine()
+        machine.backgroundShell(true)
+        machine.output(now: 6)
+        machine.tick(now: 6.1, watched: false)
+        XCTAssertEqual(machine.state, .working)
+        XCTAssertFalse(machine.tick(now: 7.2, watched: false))
+        XCTAssertEqual(machine.state, .shell)
+    }
+
+    func testLongWorkThatLeavesAShellRunningStillNotifies() {
+        var machine = idleMachine()
+        machine.userInput(now: 5)
+        work(&machine, from: 6, to: 10)
+        machine.backgroundShell(true)
+        XCTAssertEqual(machine.state, .working)
+        XCTAssertTrue(machine.tick(now: 11.6, watched: false))
+        XCTAssertEqual(machine.state, .done)
+
+        // Quem olha o agente apaga o DONE e passa a ver que o comando continua rodando.
+        var byFocus = machine
+        byFocus.focused(now: 12)
+        XCTAssertEqual(byFocus.state, .shell)
+        var byKey = machine
+        byKey.userInput(now: 12)
+        XCTAssertEqual(byKey.state, .shell)
+    }
+
+    func testWatchedWorkThatLeavesAShellRunningEndsInShell() {
+        var machine = idleMachine()
+        machine.userInput(now: 5)
+        machine.backgroundShell(true)
+        work(&machine, from: 6, to: 10, watched: true)
+        XCTAssertFalse(machine.tick(now: 11.6, watched: true))
+        XCTAssertEqual(machine.state, .shell)
+
+        // O sino com alguém olhando não vira aviso nem apaga o comando em segundo plano.
+        machine.output(now: 12)
+        machine.tick(now: 12.1, watched: true)
+        XCTAssertEqual(machine.state, .working)
+        XCTAssertFalse(machine.bell(watched: true))
+        XCTAssertEqual(machine.state, .shell)
+    }
+
+    func testBackgroundShellOnlyShowsWhenTheAgentIsAtRest() {
+        var booting = AgentStateMachine(now: 0)
+        booting.backgroundShell(true)
+        XCTAssertEqual(booting.state, .boot)
+        booting.tick(now: 2.1, watched: false)
+        XCTAssertEqual(booting.state, .shell)
+
+        var done = idleMachine()
+        done.bell(watched: false)
+        done.backgroundShell(true)
+        XCTAssertEqual(done.state, .done)
+
+        var exited = idleMachine()
+        exited.exited()
+        exited.backgroundShell(true)
+        XCTAssertEqual(exited.state, .exited)
+    }
+
+    func testRespawnForgetsTheBackgroundShell() {
+        var machine = idleMachine()
+        machine.backgroundShell(true)
+        machine.exited()
+        machine.spawned(now: 20)
+        XCTAssertFalse(machine.hasBackgroundShell)
+        machine.tick(now: 22.1, watched: false)
+        XCTAssertEqual(machine.state, .idle)
+    }
+
     func testExitedIsFinalUntilRespawn() {
         var machine = idleMachine()
         machine.exited()

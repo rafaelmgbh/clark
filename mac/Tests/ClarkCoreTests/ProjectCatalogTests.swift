@@ -32,6 +32,14 @@ final class ProjectCatalogTests: XCTestCase {
         return home + "/" + relative
     }
 
+    /// Worktree de `main`: pasta com um arquivo `.git` que aponta para dentro do repositório principal.
+    @discardableResult
+    private func makeWorktree(_ relative: String, of main: String) -> String {
+        let name = (relative as NSString).lastPathComponent
+        temp.write(relative + "/.git", "gitdir: \(main)/.git/worktrees/\(name)\n")
+        return home + "/" + relative
+    }
+
     func testRepositoriesUnderTheCompanyAreItsProjects() {
         let site = makeRepository("Projetos/beta/site")
         let api = makeRepository("Projetos/acme/api")
@@ -63,13 +71,142 @@ final class ProjectCatalogTests: XCTestCase {
         let found = groups()
         XCTAssertEqual(found.first?.projects, [])
         XCTAssertEqual(found.first?.sections, [
-            ProjectSection(title: "Sistemas", projects: [ProjectEntry(name: "Sistemas Erp", path: grupo)]),
-            ProjectSection(title: "Sistemas › Sistemas Erp › Projects", projects: [
-                ProjectEntry(name: "Compras", path: compras), ProjectEntry(name: "Rh", path: rh),
-                ProjectEntry(name: "Vendas", path: vendas),
-            ]),
-        ])
+            ProjectSection(title: "Sistemas Erp", path: grupo, folder: ProjectEntry(name: "Sistemas Erp", path: grupo),
+                           projects: [
+                               ProjectEntry(name: "Compras", path: compras), ProjectEntry(name: "Rh", path: rh),
+                               ProjectEntry(name: "Vendas", path: vendas),
+                           ]),
+        ], "a pasta-grupo abre de dentro do grupo dela; `projects` não vira nome e `sistemas` ficou sem projeto")
         XCTAssertEqual(found.first?.others, [ProjectEntry(name: "Sistemas", path: home + "/Projetos/acme/sistemas")])
+    }
+
+    func testProjectThatHoldsProjectsOpensFromItsOwnGroup() {
+        let suite = temp.makeDirectory("Projetos/acme/suite")
+        temp.write("Projetos/acme/suite/CLAUDE.md", "# contexto")
+        let nucleo = makeRepository("Projetos/acme/suite/nucleo")
+        let api = makeRepository("Projetos/acme/api")
+
+        let found = groups()
+        XCTAssertEqual(found.first?.projects, [ProjectEntry(name: "Api", path: api)],
+                       "o projeto que guarda projetos não aparece duas vezes, uma solto e outra como grupo")
+        XCTAssertEqual(found.first?.sections, [
+            ProjectSection(title: "Suite", path: suite, folder: ProjectEntry(name: "Suite", path: suite),
+                           projects: [ProjectEntry(name: "Nucleo", path: nucleo)]),
+        ])
+
+        let nicknamed = groups(nicknames: [suite: "Suíte"])
+        XCTAssertEqual(nicknamed.first?.nicknamed, [ProjectEntry(name: "Suíte", path: suite)])
+        XCTAssertEqual(nicknamed.first?.sections, [
+            ProjectSection(title: "Suite", path: suite, projects: [ProjectEntry(name: "Nucleo", path: nucleo)]),
+        ], "com apelido ela já está no topo da empresa")
+    }
+
+    func testProjectWhoseOnlyChildBecameAGroupStaysAProject() {
+        let fora = temp.makeDirectory("Projetos/acme/fora")
+        temp.write("Projetos/acme/fora/CLAUDE.md", "# contexto")
+        let dentro = temp.makeDirectory("Projetos/acme/fora/dentro")
+        temp.write("Projetos/acme/fora/dentro/AGENTS.md", "# contexto")
+        let api = makeRepository("Projetos/acme/fora/dentro/api")
+
+        let found = groups()
+        XCTAssertEqual(found.first?.projects, [ProjectEntry(name: "Fora", path: fora)],
+                       "o grupo que ficou vazio some, e a pasta dele continua um projeto comum")
+        XCTAssertEqual(found.first?.sections, [
+            ProjectSection(title: "Dentro", path: dentro, folder: ProjectEntry(name: "Dentro", path: dentro),
+                           projects: [ProjectEntry(name: "Api", path: api)]),
+        ])
+    }
+
+    func testGroupTakesTheNameOfItsFolderAndOuterFoldersOnlyTellTwinsApart() {
+        let loja = makeRepository("Projetos/acme/clientes/loja")
+        let vendas = makeRepository("Projetos/acme/clientes/erp/vendas")
+        let compras = makeRepository("Projetos/acme/parceiros/erp/compras")
+        let fundo = makeRepository("Projetos/acme/a/b/c/fundo")
+
+        XCTAssertEqual(groups().first?.sections, [
+            ProjectSection(title: "C", path: home + "/Projetos/acme/a/b/c",
+                           projects: [ProjectEntry(name: "Fundo", path: fundo)]),
+            ProjectSection(title: "Clientes", path: home + "/Projetos/acme/clientes",
+                           projects: [ProjectEntry(name: "Loja", path: loja)]),
+            ProjectSection(title: "Clientes › Erp", path: home + "/Projetos/acme/clientes/erp",
+                           projects: [ProjectEntry(name: "Vendas", path: vendas)]),
+            ProjectSection(title: "Parceiros › Erp", path: home + "/Projetos/acme/parceiros/erp",
+                           projects: [ProjectEntry(name: "Compras", path: compras)]),
+        ], "o nome é o da pasta, na ordem do menu; o caminho de fora só entra quando dois se confundem")
+    }
+
+    func testFolderThatOnlyOrganizesDoesNotNameTheGroup() {
+        let compras = makeRepository("Projetos/acme/erp/projects/compras")
+        let nucleo = makeRepository("Projetos/acme/erp/nucleo")
+        let site = makeRepository("Projetos/acme/apps/site")
+
+        XCTAssertEqual(groups().first?.sections, [
+            ProjectSection(title: "Apps", path: home + "/Projetos/acme/apps",
+                           projects: [ProjectEntry(name: "Site", path: site)]),
+            ProjectSection(title: "Erp", path: home + "/Projetos/acme/erp",
+                           projects: [ProjectEntry(name: "Compras", path: compras),
+                                      ProjectEntry(name: "Nucleo", path: nucleo)]),
+        ], "`projects` some do nome e junta com o que está ao lado dela; sozinha, `apps` é o nome que há")
+    }
+
+    func testTwoGroupsThatEndUpWithTheSameNameShowTheWholeWay() {
+        let um = makeRepository("Projetos/acme/erp/um")
+        let dois = makeRepository("Projetos/acme/projects/erp/dois")
+
+        XCTAssertEqual(groups().first?.sections, [
+            ProjectSection(title: "Erp", path: home + "/Projetos/acme/erp",
+                           projects: [ProjectEntry(name: "Um", path: um)]),
+            ProjectSection(title: "Projects › Erp", path: home + "/Projetos/acme/projects/erp",
+                           projects: [ProjectEntry(name: "Dois", path: dois)]),
+        ], "pastas diferentes não se misturam por terem o mesmo nome")
+    }
+
+    func testWorktreesAreListedApartFromTheProjects() {
+        let api = makeRepository("Projetos/acme/api")
+        let chamado = makeWorktree("Projetos/acme/api-431", of: api)
+        makeRepository("Projetos/acme/api-431/libs/interna")
+        let erp = makeRepository("Projetos/acme/sistemas/erp")
+        let ajuste = makeWorktree("Projetos/acme/sistemas/erp-ajuste", of: erp)
+
+        let found = groups()
+        XCTAssertEqual(found.first?.projects, [ProjectEntry(name: "Api", path: api)],
+                       "a worktree é um branch do projeto, não outro projeto; a busca não entra nela")
+        XCTAssertEqual(found.first?.sections, [
+            ProjectSection(title: "Sistemas", path: home + "/Projetos/acme/sistemas",
+                           projects: [ProjectEntry(name: "Erp", path: erp)]),
+        ])
+        XCTAssertEqual(found.first?.worktrees, [
+            ProjectEntry(name: "Api 431", path: chamado), ProjectEntry(name: "Erp Ajuste", path: ajuste),
+        ], "as de todos os níveis saem juntas")
+        XCTAssertEqual(found.first?.others.map(\.name), ["Sistemas"])
+    }
+
+    func testCompanyWithOnlyWorktreesIsNotBare() {
+        makeWorktree("Projetos/acme/api-431", of: "/outro/disco/api")
+
+        XCTAssertEqual(groups().first?.worktrees.map(\.name), ["Api 431"])
+        XCTAssertEqual(groups().first?.isBare, false)
+    }
+
+    func testGitFileThatIsNotAWorktreeIsStillAProject() {
+        // Submódulo e clone com a pasta do git em outro lugar também têm o `.git` em arquivo.
+        temp.write("Projetos/acme/modulo/.git", "gitdir: ../.git/modules/modulo\n")
+        temp.write("Projetos/acme/separado/.git", "gitdir: /Volumes/git/separado.git\n")
+        temp.write("Projetos/acme/estranho/.git", "nada do que se espera\n")
+        temp.write("Projetos/acme/vazio/.git", "")
+
+        let found = groups()
+        XCTAssertEqual(found.first?.projects.map(\.name), ["Estranho", "Modulo", "Separado", "Vazio"])
+        XCTAssertEqual(found.first?.worktrees, [])
+    }
+
+    func testNicknamedWorktreeStaysWithTheNicknamed() {
+        let api = makeRepository("Projetos/acme/api")
+        let chamado = makeWorktree("Projetos/acme/api-431", of: api)
+
+        let found = groups(nicknames: [chamado: "Chamado 431"])
+        XCTAssertEqual(found.first?.nicknamed, [ProjectEntry(name: "Chamado 431", path: chamado)])
+        XCTAssertEqual(found.first?.worktrees, [], "o apelidado não aparece duas vezes")
     }
 
     func testSearchStopsAtARepositoryAndAtFourLevels() {
@@ -81,7 +218,8 @@ final class ProjectCatalogTests: XCTestCase {
         let found = groups()
         XCTAssertEqual(found.first?.projects.map(\.name), ["Api"], "o que está dentro de um repositório é dele")
         XCTAssertEqual(found.first?.sections, [
-            ProjectSection(title: "A › B › C", projects: [ProjectEntry(name: "D", path: fundo)]),
+            ProjectSection(title: "C", path: home + "/Projetos/acme/a/b/c",
+                           projects: [ProjectEntry(name: "D", path: fundo)]),
         ], "o quarto nível entra; o quinto não")
     }
 
@@ -142,7 +280,8 @@ final class ProjectCatalogTests: XCTestCase {
         ], "apelido vale para qualquer pasta que existe, a qualquer profundidade")
         XCTAssertEqual(found.first?.projects, [], "o apelidado não aparece duas vezes")
         XCTAssertEqual(found.first?.sections, [
-            ProjectSection(title: "Sistemas", projects: [ProjectEntry(name: "Vendas", path: vendas)]),
+            ProjectSection(title: "Sistemas", path: home + "/Projetos/acme/sistemas",
+                           projects: [ProjectEntry(name: "Vendas", path: vendas)]),
         ])
         XCTAssertEqual(found.first?.others.map(\.name), ["A", "Sistemas"])
     }
@@ -196,7 +335,8 @@ final class ProjectCatalogTests: XCTestCase {
         """)
         XCTAssertEqual(found, [
             ProjectGroup(name: "Tudo", folders: [home + "/Projetos"],
-                         sections: [ProjectSection(title: "Acme", projects: [ProjectEntry(name: "Api", path: api)])],
+                         sections: [ProjectSection(title: "Acme", path: home + "/Projetos/acme",
+                                                   projects: [ProjectEntry(name: "Api", path: api)])],
                          others: [ProjectEntry(name: "Acme", path: home + "/Projetos/acme"),
                                   ProjectEntry(name: "Beta", path: home + "/Projetos/beta")]),
         ])
@@ -231,7 +371,8 @@ final class ProjectCatalogTests: XCTestCase {
                                                    withDestinationPath: home + "/Projetos/acme")
 
         XCTAssertEqual(groups().first?.sections, [
-            ProjectSection(title: "Grupo", projects: [ProjectEntry(name: "Api", path: api)]),
+            ProjectSection(title: "Grupo", path: home + "/Projetos/acme/grupo",
+                           projects: [ProjectEntry(name: "Api", path: api)]),
         ])
     }
 
@@ -252,7 +393,7 @@ final class ProjectCatalogTests: XCTestCase {
         let found = groups(nicknames: [portal: "Portal"])
         XCTAssertEqual(found.first?.nicknamed, [ProjectEntry(name: "Portal", path: portal)])
         XCTAssertEqual(found.first?.sections, [
-            ProjectSection(title: "Perto",
+            ProjectSection(title: "Perto", path: home + "/Projetos/acme/perto",
                            projects: [ProjectEntry(name: "Site", path: home + "/Projetos/acme/perto/site")]),
         ], "o apelidado não volta pela pasta do link, e a pasta de verdade não repete a do link")
     }

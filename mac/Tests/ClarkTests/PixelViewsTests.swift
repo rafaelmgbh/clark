@@ -37,6 +37,8 @@ final class PixelViewsTests: XCTestCase {
         XCTAssertEqual(StateLabel.text(.idle, time: 0.75), "IDLE")
         XCTAssertEqual(StateLabel.text(.done, time: 0.75), "DONE!")
         XCTAssertEqual(StateLabel.text(.exited, time: 0.75), "GAME OVER")
+        XCTAssertEqual(StateLabel.text(.shell, time: 0), "SHELL")
+        XCTAssertEqual(StateLabel.text(.shell, time: 0.5), "SHELL..")
     }
 
     func testStateColors() {
@@ -45,6 +47,10 @@ final class PixelViewsTests: XCTestCase {
         XCTAssertEqual(StateLabel.color(.boot, theme: theme), theme.yellow)
         XCTAssertEqual(StateLabel.color(.idle, theme: theme), theme.dim)
         XCTAssertEqual(StateLabel.color(.exited, theme: theme), theme.red)
+        // A mesma cor em que o Claude Code escreve `1 shell` no rodapé do terminal.
+        XCTAssertEqual(StateLabel.color(.shell, theme: theme), theme.term[6])
+        XCTAssertNotEqual(StateLabel.color(.shell, theme: theme), StateLabel.color(.working, theme: theme))
+        XCTAssertTrue(StateLabel.isAnimated(.shell))
         XCTAssertFalse(StateLabel.isAnimated(.idle))
         XCTAssertFalse(StateLabel.isAnimated(.exited))
         XCTAssertTrue(StateLabel.isAnimated(.done))
@@ -466,6 +472,133 @@ final class PixelViewsTests: XCTestCase {
         }
     }
 
+    // MARK: medidor de consumo
+
+    private func usage(_ percents: [Int?], age: Double = 60) -> UsageMeter {
+        let labels = ["5H", "7D"]
+        let gauges = percents.enumerated().map { UsageMeter.Gauge(label: labels[$0.offset], percent: $0.element,
+                                                                 resetsIn: 3600) }
+        return UsageMeter(gauges: gauges, age: age)
+    }
+
+    private func meterView(_ meter: UsageMeter?, compact: Bool = false) -> (view: UsageMeterView, image: RenderedImage) {
+        let view = UsageMeterView()
+        view.meter = meter
+        view.isCompact = compact
+        let width = max(1, view.fittingWidth(compact: compact))
+        return (view, RenderedImage(view, width: width, height: UsageMeterView.height))
+    }
+
+    func testUsageMeterColorsEachBarByItsLevel() {
+        let (view, image) = meterView(usage([20, 85]))
+        let half = view.fittingWidth(compact: false) / 2
+        XCTAssertEqual(image.count(theme.green), 2 * 4 * 10, "20% acende dois blocos verdes")
+        XCTAssertEqual(image.count(theme.green, x: half), 0)
+        XCTAssertGreaterThan(image.count(theme.yellow, x: half), 8 * 4 * 10, "85%: oito blocos e o número, amarelos")
+        XCTAssertEqual(image.count(theme.red), 0)
+        XCTAssertEqual(image.count(theme.bg4), (8 + 2) * 4 * 10, "os blocos apagados")
+        XCTAssertGreaterThan(image.count(theme.ink, width: half), 0, "abaixo do alerta o número sai na cor do texto")
+        XCTAssertGreaterThan(meterView(usage([96])).image.count(theme.red), 9 * 4 * 10)
+    }
+
+    func testStaleUsageMeterIsAllGray() {
+        let image = meterView(usage([20, 96], age: UsageMeter.staleAfter + 1)).image
+        for color in [theme.green, theme.yellow, theme.red, theme.ink] { XCTAssertEqual(image.count(color), 0) }
+        XCTAssertGreaterThan(image.count(theme.dim), 0)
+    }
+
+    func testCompactUsageMeterDropsTheBars() {
+        let (view, image) = meterView(usage([20, 85]), compact: true)
+        XCTAssertEqual(view.fittingWidth(compact: false) - view.fittingWidth(compact: true),
+                       2 * (UsageMeterView.barWidth + 6))
+        XCTAssertEqual(image.count(theme.bg4), 0)
+        XCTAssertEqual(image.count(theme.green), 0)
+        XCTAssertGreaterThan(image.count(theme.yellow), 0, "o número continua na cor do nível")
+    }
+
+    func testUsageMeterWithoutAReadingTakesNoRoomAndTellsItsSummaryOtherwise() {
+        let view = UsageMeterView()
+        XCTAssertEqual(view.fittingWidth(compact: false), 0)
+        XCTAssertNil(view.toolTip)
+        view.meter = usage([20])
+        XCTAssertEqual(view.toolTip, usage([20]).summary)
+        view.meter = nil
+        XCTAssertNil(view.toolTip)
+    }
+
+    func testUnknownUsageShowsDashesAndAnEmptyBar() {
+        let (view, image) = meterView(usage([nil]))
+        XCTAssertEqual(view.fittingWidth(compact: false),
+                       PixelFont.textWidth("5H", scale: 2) + 6 + UsageMeterView.barWidth + 6
+                           + PixelFont.textWidth("--", scale: 2))
+        XCTAssertEqual(image.count(theme.bg4), 10 * 4 * 10)
+        XCTAssertEqual(image.count(theme.green), 0)
+    }
+
+    func testTopBarShowsTheUsageMeterBetweenTheStatsAndTheButtons() {
+        let bar = TopBarView()
+        XCTAssertTrue(bar.usageView.isHidden, "sem leitura não há medidor")
+        bar.stats = AgentStats(states: [.working, .working, .done])
+        bar.usage = usage([20, 85])
+        _ = RenderedImage(bar, width: 1360, height: TopBarView.height)
+        let meter = bar.usageView
+        XCTAssertFalse(meter.isHidden)
+        XCTAssertFalse(meter.isCompact)
+        XCTAssertEqual(meter.meter, bar.usage)
+        XCTAssertEqual(Int(meter.frame.width), meter.fittingWidth(compact: false))
+        XCTAssertEqual(Int(meter.frame.maxX), Int(bar.projectButton.frame.minX) - 16)
+        XCTAssertEqual(Int(meter.frame.minY), (46 - UsageMeterView.height) / 2)
+        bar.usage = nil
+        _ = RenderedImage(bar, width: 1360, height: TopBarView.height)
+        XCTAssertTrue(meter.isHidden)
+    }
+
+    func testTightTopBarShrinksTheUsageMeterAndThenHidesItBeforeAnyStat() {
+        let bar = TopBarView()
+        bar.stats = AgentStats(states: [.working, .working, .done])
+        bar.usage = usage([20, 85])
+        let meter = bar.usageView
+        let statsRight = firstStatX + ["AGENTS 3", "WORKING 2", "DONE 1", "IDLE 0"]
+            .map { PixelFont.textWidth($0, scale: 2) + 34 }.reduce(0, +) - 22
+        // Largura em que o medidor inteiro cabe com a folga exata, e um pixel a menos.
+        _ = RenderedImage(bar, width: 1360, height: TopBarView.height)
+        let right = 1360 - Int(bar.projectButton.frame.minX)
+        let full = statsRight + 16 + meter.fittingWidth(compact: false) + 16 + right
+        _ = RenderedImage(bar, width: full, height: TopBarView.height)
+        XCTAssertFalse(meter.isHidden)
+        XCTAssertFalse(meter.isCompact)
+        _ = RenderedImage(bar, width: full - 1, height: TopBarView.height)
+        XCTAssertFalse(meter.isHidden)
+        XCTAssertTrue(meter.isCompact, "sem espaço para as barras ficam só os números")
+        XCTAssertEqual(Int(meter.frame.width), meter.fittingWidth(compact: true))
+
+        let compact = statsRight + 16 + meter.fittingWidth(compact: true) + 16 + right
+        _ = RenderedImage(bar, width: compact, height: TopBarView.height)
+        XCTAssertFalse(meter.isHidden)
+        let tight = RenderedImage(bar, width: compact - 1, height: TopBarView.height)
+        XCTAssertTrue(meter.isHidden, "o medidor some antes de qualquer contagem")
+        let idle = statsRight - PixelFont.textWidth("IDLE 0", scale: 2)
+        XCTAssertGreaterThan(tight.count(theme.dim, x: idle, y: statsY, width: statsRight - idle, height: 14), 0,
+                             "a última contagem continua na barra")
+    }
+
+    func testTopBarRecomputesTheUsageMeterWhenTheStatsGrow() {
+        let bar = TopBarView()
+        bar.stats = AgentStats(states: [.working])
+        bar.usage = usage([20, 85])
+        _ = RenderedImage(bar, width: 1360, height: TopBarView.height)
+        let right = 1360 - Int(bar.projectButton.frame.minX)
+        let statsRight = firstStatX + ["AGENTS 1", "WORKING 1", "DONE 0", "IDLE 0"]
+            .map { PixelFont.textWidth($0, scale: 2) + 34 }.reduce(0, +) - 22
+        let width = statsRight + 16 + bar.usageView.fittingWidth(compact: false) + 16 + right
+        _ = RenderedImage(bar, width: width, height: TopBarView.height)
+        XCTAssertFalse(bar.usageView.isCompact)
+        // GAME OVER entra na barra e toma o lugar das barras do medidor.
+        bar.stats = AgentStats(states: [.working, .exited])
+        _ = RenderedImage(bar, width: width, height: TopBarView.height)
+        XCTAssertTrue(bar.usageView.isHidden)
+    }
+
     func testAgentStatsCountBootAsIdle() {
         let stats = AgentStats(states: [.boot, .idle, .working, .done, .done, .exited])
         XCTAssertEqual(stats.agents, 6)
@@ -474,6 +607,13 @@ final class PixelViewsTests: XCTestCase {
         XCTAssertEqual(stats.done, 2)
         XCTAssertEqual(stats.exited, 1)
         XCTAssertEqual(AgentStats(states: []), AgentStats())
+    }
+
+    func testAgentStatsCountAShellInTheBackgroundAsWorking() {
+        let stats = AgentStats(states: [.shell, .working, .idle])
+        XCTAssertEqual(stats.agents, 3)
+        XCTAssertEqual(stats.working, 2)
+        XCTAssertEqual(stats.idle, 1)
     }
 
     func testProjectButtonHasAFixedTitle() {

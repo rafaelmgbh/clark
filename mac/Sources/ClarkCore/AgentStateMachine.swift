@@ -3,6 +3,8 @@ public enum AgentState: String, Sendable, CaseIterable {
     case working = "WORKING"
     case idle = "IDLE"
     case done = "DONE"
+    /// Parado, com um comando do Claude Code rodando em segundo plano.
+    case shell = "SHELL"
     case exited = "EXITED"
 }
 
@@ -22,6 +24,8 @@ public struct AgentStateMachine: Sendable {
 
     public private(set) var state: AgentState = .boot
     public private(set) var hasInput = false
+    /// O Claude Code diz que a sessão tem comando em segundo plano rodando.
+    public private(set) var hasBackgroundShell = false
     /// Momento da última saída que contou como atividade.
     public private(set) var lastChange = -Double.infinity
     private var spawnTime: Double
@@ -38,6 +42,7 @@ public struct AgentStateMachine: Sendable {
         state = .boot
         spawnTime = now
         hasInput = false
+        hasBackgroundShell = false
         workStart = nil
     }
 
@@ -49,7 +54,7 @@ public struct AgentStateMachine: Sendable {
     public mutating func userInput(now: Double) {
         lastInput = now
         hasInput = true
-        if state == .done { state = .idle }
+        if state == .done { state = resting }
     }
 
     public mutating func output(now: Double) {
@@ -59,7 +64,7 @@ public struct AgentStateMachine: Sendable {
 
     public mutating func focused(now: Double) {
         mute(Self.focusMute, now: now)
-        if state == .done { state = .idle }
+        if state == .done { state = resting }
     }
 
     public mutating func resized(now: Double) {
@@ -93,13 +98,19 @@ public struct AgentStateMachine: Sendable {
             if hasInput && worked > Self.minWork && !watched {
                 return attention(watched: watched)
             }
-            state = .idle
+            state = resting
             return false
         }
         if state == .boot && now - spawnTime > Self.bootTime {
-            state = .idle
+            state = resting
         }
         return false
+    }
+
+    /// O que a saída do terminal não mostra: sobrou, ou não, comando rodando em segundo plano.
+    public mutating func backgroundShell(_ running: Bool) {
+        hasBackgroundShell = running
+        if state == .idle || state == .shell { state = resting }
     }
 
     public mutating func exited() {
@@ -109,10 +120,13 @@ public struct AgentStateMachine: Sendable {
 
     private mutating func attention(watched: Bool) -> Bool {
         if watched || state == .exited {
-            if state == .working { state = .idle }
+            if state == .working { state = resting }
             return false
         }
         state = .done
         return true
     }
+
+    /// Estado de quem não está trabalhando nem pedindo atenção.
+    private var resting: AgentState { hasBackgroundShell ? .shell : .idle }
 }

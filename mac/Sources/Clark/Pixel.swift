@@ -88,6 +88,7 @@ enum StateLabel {
         case .boot: return "BOOT" + dots
         case .working: return "WORKING" + dots
         case .idle: return "IDLE"
+        case .shell: return "SHELL" + dots
         case .done: return "DONE!"
         case .exited: return "GAME OVER"
         }
@@ -98,12 +99,14 @@ enum StateLabel {
         case .boot, .done: return theme.yellow
         case .working: return theme.green
         case .idle: return theme.dim
+        // Ciano do terminal: a cor em que o Claude Code escreve `1 shell` no rodapé.
+        case .shell: return theme.term[6]
         case .exited: return theme.red
         }
     }
 
     /// Estados cujo desenho muda com o tempo e pedem redesenho a cada tique.
     static func isAnimated(_ state: AgentState) -> Bool {
-        state == .boot || state == .working || state == .done
+        state == .boot || state == .working || state == .done || state == .shell
     }
 }

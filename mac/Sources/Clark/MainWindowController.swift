@@ -5,6 +5,8 @@ import ClarkCore
 final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuItemValidation, AgentPaneDelegate {
     static let margin: CGFloat = 6
     static let fontStep = 0.1
+    /// De quanto em quanto tempo o consumo do plano é relido, em segundos.
+    static let usageInterval = 60.0
 
     private(set) var panes: [AgentPaneView] = []
     /// Agente do painel principal no modo foco.
@@ -22,6 +24,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     var isAppActive: () -> Bool = { NSApplication.shared.isActive }
     /// A janela está com o teclado. Trocado nos testes, que rodam sem janela na tela.
     lazy var isWindowKey: () -> Bool = { [weak self] in self?.window?.isKeyWindow ?? false }
+    /// Hora do relógio de parede, em segundos desde 1970. Trocada nos testes.
+    var wallClock: () -> Double = { Date().timeIntervalSince1970 }
     /// Janela do diff, criada no primeiro pedido.
     private(set) var diffPanel: DiffWindowController?
     /// Nome com que a janela do diff guarda posição e tamanho. nil: não guarda.
@@ -50,6 +54,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     private var lastTitle = ""
     private var lastBadge = -1
     private var lastBlink = -1
+    /// Quando o consumo do plano foi lido pela última vez, no relógio dos tiques.
+    private var lastUsageRead: Double?
 
     init(config: ClarkConfig, store: ConfigStore, home: String, notifier: Notifying,
          clock: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime }) {
@@ -78,7 +84,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         // Voltar ao CLARK é o sinal de que algo pode ter mudado por fora: um commit no terminal, um editor.
         activationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
-        ) { [weak self] _ in self?.refreshDiffs() }
+        ) { [weak self] _ in
+            self?.refreshDiffs()
+            self?.refreshUsage()
+        }
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
@@ -340,6 +349,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         panes.forEach { $0.diff.refresh() }
     }
 
+    /// Relê o consumo do plano do arquivo que o AiUsageBar mantém. Sem ele, a barra fica sem o medidor.
+    func refreshUsage() {
+        lastUsageRead = clock()
+        topBar.usage = UsageMeter.read(path: UsageMeter.path(home: home), now: wallClock())
+    }
+
     func setFontScale(_ scale: Double) {
         let range = ClarkConfig.fontScaleRange
         let clamped = (min(range.upperBound, max(range.lowerBound, scale)) * 100).rounded() / 100
@@ -356,6 +371,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     static let companyFolderTitle = "Pasta da empresa"
     static let otherFoldersTitle = "Outras pastas"
+    static let worktreesTitle = "Worktrees"
     static let otherFolderTitle = "Outra pasta…"
 
     /// Menu do botão PROJETO, relido do disco a cada abertura: o `GLOBAL`, uma empresa por linha com
@@ -393,38 +409,46 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         projectItem(entry.name, path: entry.path)
     }
 
+    /// Linha que abre um submenu com os blocos que têm item.
+    private static func submenuItem(_ title: String, blocks: [[NSMenuItem]]) -> NSMenuItem {
+        let submenu = NSMenu(title: title)
+        fill(submenu, with: blocks)
+        let holder = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        holder.submenu = submenu
+        return holder
+    }
+
     /// Linha de uma empresa. O submenu traz, de cima para baixo: os projetos apelidados, os do
-    /// primeiro nível, os mais fundos sob o nome da pasta em que estão, as pastas que não são projeto
-    /// e a pasta da própria empresa.
+    /// primeiro nível, um grupo por pasta que guarda projetos mais fundos, as worktrees, as pastas
+    /// que não são projeto e a pasta da própria empresa.
     private func companyItem(_ group: ProjectGroup) -> NSMenuItem {
         // Empresa de uma pasta só, sem nada dentro para escolher, abre direto.
         if group.isBare, group.folders.count == 1 { return projectItem(group.name, path: group.folders[0]) }
-        let submenu = NSMenu(title: group.name)
-        var projects = group.projects.map(projectItem)
-        for section in group.sections {
-            projects.append(.sectionHeader(title: section.title))
-            for entry in section.projects {
-                let item = projectItem(entry)
-                item.indentationLevel = 1
-                projects.append(item)
-            }
-        }
         var folders: [NSMenuItem] = []
+        if !group.worktrees.isEmpty {
+            folders.append(Self.submenuItem(Self.worktreesTitle, blocks: [group.worktrees.map(projectItem)]))
+        }
         if !group.others.isEmpty {
-            let others = NSMenu(title: Self.otherFoldersTitle)
-            group.others.map(projectItem).forEach(others.addItem)
-            let holder = NSMenuItem(title: Self.otherFoldersTitle, action: nil, keyEquivalent: "")
-            holder.submenu = others
-            folders.append(holder)
+            folders.append(Self.submenuItem(Self.otherFoldersTitle, blocks: [group.others.map(projectItem)]))
         }
         if group.folders.count == 1 {
             folders.append(projectItem(Self.companyFolderTitle, path: group.folders[0]))
         } else {
             folders += group.folders.map { projectItem(PathTools.short($0, home: home), path: $0) }
         }
-        Self.fill(submenu, with: [group.nicknamed.map(projectItem), projects, folders])
-        let holder = NSMenuItem(title: group.name, action: nil, keyEquivalent: "")
-        holder.submenu = submenu
+        return Self.submenuItem(group.name, blocks: [
+            group.nicknamed.map(projectItem),
+            group.projects.map(projectItem) + group.sections.map(sectionItem),
+            folders,
+        ])
+    }
+
+    /// Grupo dos projetos de uma pasta. Quando a própria pasta é um projeto, ela vem em cima.
+    private func sectionItem(_ section: ProjectSection) -> NSMenuItem {
+        let holder = Self.submenuItem(section.title, blocks: [
+            section.folder.map { [projectItem($0)] } ?? [], section.projects.map(projectItem),
+        ])
+        holder.toolTip = PathTools.short(section.path, home: home)
         return holder
     }
 
@@ -583,6 +607,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         let blink = Int(now * 2)
         if panes.isEmpty && blink != lastBlink { emptyView.time = now }
         lastBlink = blink
+        if lastUsageRead.map({ now - $0 >= Self.usageInterval }) ?? true { refreshUsage() }
         refreshChrome()
     }
 
