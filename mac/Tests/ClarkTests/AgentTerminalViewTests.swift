@@ -1,0 +1,164 @@
+import ClarkCore
+import SwiftTerm
+import XCTest
+@testable import Clark
+
+final class AgentTerminalViewTests: XCTestCase {
+    private let environment = ["TERM=xterm-256color", "PATH=/usr/bin:/bin"]
+
+    private func makeView() -> AgentTerminalView {
+        AgentTerminalView(frame: NSRect(x: 0, y: 0, width: 640, height: 400))
+    }
+
+    /// Roda o script até o fim e devolve o terminal.
+    private func run(_ script: String, configure: (AgentTerminalView) -> Void = { _ in }) -> AgentTerminalView {
+        let view = makeView()
+        let exited = expectation(description: "processo terminou")
+        configure(view)
+        let previous = view.onExit
+        view.onExit = { code in
+            previous?(code)
+            exited.fulfill()
+        }
+        view.startProcess(executable: "/bin/sh", args: ["-c", script], environment: environment,
+                          currentDirectory: "/")
+        wait(for: [exited], timeout: 10)
+        return view
+    }
+
+    func testOutputBellAndExitReachTheHooks() {
+        var outputs = 0, bells = 0, inputs = 0
+        var code: Int32?
+        let view = run("printf 'ola\\nmundo\\n\\a'; exit 3") { view in
+            view.onOutput = { outputs += 1 }
+            view.onBell = { bells += 1 }
+            view.onUserInput = { inputs += 1 }
+            view.onExit = { code = $0 }
+        }
+        XCTAssertGreaterThan(outputs, 0)
+        XCTAssertEqual(bells, 1)
+        XCTAssertEqual(inputs, 0)
+        XCTAssertEqual(code, 3)
+        XCTAssertTrue(view.hasExited)
+        XCTAssertEqual(view.linesAboveCursor(), ["ola", "mundo"])
+    }
+
+    func testTerminalRepliesAreNotUserInput() {
+        var inputs = 0
+        // ESC[6n pede a posição do cursor: o emulador responde sozinho, sem tecla do usuário.
+        _ = run("printf '\\033[6n'; sleep 0.3") { view in view.onUserInput = { inputs += 1 } }
+        XCTAssertEqual(inputs, 0)
+    }
+
+    func testTypingCountsAsInputAndEnterAfterExitAsksRestart() {
+        var inputs = 0, restarts = 0
+        let view = makeView()
+        let exited = expectation(description: "processo terminou")
+        view.onUserInput = { inputs += 1 }
+        view.onRestartRequested = { restarts += 1 }
+        view.onExit = { _ in exited.fulfill() }
+        view.startProcess(executable: "/bin/sh", args: ["-c", "read x; exit 0"], environment: environment,
+                          currentDirectory: "/")
+        view.send(txt: "a\r")
+        wait(for: [exited], timeout: 10)
+        XCTAssertEqual(inputs, 1)
+
+        view.send(txt: "x")
+        XCTAssertEqual(restarts, 0, "só o Enter reabre")
+        view.send(txt: "\r")
+        XCTAssertEqual(restarts, 1)
+        XCTAssertEqual(inputs, 1, "tecla em GAME OVER não é entrada do agente")
+    }
+
+    func testMarkExitedMakesEnterAskRestartWithoutAProcess() {
+        var restarts = 0
+        let view = makeView()
+        view.onRestartRequested = { restarts += 1 }
+        view.markExited()
+        view.send(txt: "\r")
+        XCTAssertEqual(restarts, 1)
+    }
+
+    func testExitCodeComesFromTheWaitStatus() {
+        XCTAssertNil(AgentTerminalView.exitCode(fromWaitStatus: nil))
+        XCTAssertEqual(AgentTerminalView.exitCode(fromWaitStatus: 0), 0)
+        XCTAssertEqual(AgentTerminalView.exitCode(fromWaitStatus: 3 << 8), 3)
+        XCTAssertEqual(AgentTerminalView.exitCode(fromWaitStatus: 255 << 8), 255)
+    }
+
+    func testOnlyWebLinksOpen() {
+        var opened: [String] = []
+        let view = makeView()
+        view.openURL = { opened.append($0.absoluteString) }
+        for link in ["file:///etc/passwd", "javascript:alert(1)", "x-apple.systempreferences:", "ssh://host",
+                     "", "sem esquema", "/bin/sh"] {
+            view.requestOpenLink(source: view, link: link, params: [:])
+        }
+        XCTAssertEqual(opened, [])
+
+        view.requestOpenLink(source: view, link: "https://example.com/a?b=1", params: [:])
+        view.requestOpenLink(source: view, link: "HTTP://example.com", params: [:])
+        XCTAssertEqual(opened, ["https://example.com/a?b=1", "HTTP://example.com"])
+    }
+
+    func testClipboardReplyNeverReachesTheProcess() {
+        let view = makeView()
+        view.startProcess(executable: "/bin/sh", args: ["-c", "printf pronto; read x"], environment: environment,
+                          currentDirectory: "/")
+        let terminal = view.getTerminal()
+        func firstLine() -> String { terminal.getLine(row: 0)?.translateToString(trimRight: true) ?? "" }
+        XCTAssertTrue(waitUntil { firstLine() == "pronto" })
+
+        // O que o SwiftTerm manda ao processo quando a saída pede `ESC ] 52 ; c ; ?`:
+        // o clipboard do usuário em base64. O tty ecoa o que chega, então dá para ver se passou.
+        view.send(source: terminal, data: Array("\u{1b}]52;c;c2VncmVkbw==\u{1b}\\".utf8)[...])
+        view.send(source: terminal, data: Array("eco".utf8)[...])
+        XCTAssertTrue(waitUntil { firstLine().hasSuffix("eco") })
+        XCTAssertEqual(firstLine(), "prontoeco")
+        ProcessReaper.hangUp(view.process.shellPid, grace: 0.3)
+    }
+
+    func testOnlyTheClipboardReplyIsDropped() {
+        func isClipboardReply(_ bytes: [UInt8]) -> Bool { AgentTerminalView.isClipboardReply(bytes[...]) }
+        XCTAssertTrue(isClipboardReply(Array("\u{1b}]52;c;c2VncmVkbw==\u{1b}\\".utf8)))
+        XCTAssertTrue(isClipboardReply(Array("\u{1b}]52;;\u{1b}\\".utf8)), "clipboard vazio")
+        XCTAssertTrue(isClipboardReply([0x9d] + Array("52;c;c2VncmVkbw==".utf8) + [0x9c]), "controles de 8 bits")
+
+        XCTAssertFalse(isClipboardReply(Array("\u{1b}[5;1R".utf8)), "posição do cursor")
+        XCTAssertFalse(isClipboardReply(Array("\u{1b}]11;rgb:0d0d/1111/1717\u{1b}\\".utf8)), "cor de fundo")
+        XCTAssertFalse(isClipboardReply(Array("\u{1b}]520;x\u{1b}\\".utf8)))
+        XCTAssertFalse(isClipboardReply(Array("52;c;c2VncmVkbw==".utf8)))
+        XCTAssertFalse(isClipboardReply([]))
+        XCTAssertFalse(isClipboardReply([0x1b]))
+    }
+
+    func testApplySetsFontAndColors() {
+        let view = makeView()
+        view.apply(TerminalAppearance(theme: .dark, fontName: "Menlo", fontSize: 15))
+        XCTAssertEqual(view.font.pointSize, 15)
+        XCTAssertEqual(view.font.familyName, "Menlo")
+        XCTAssertEqual(view.nativeBackgroundColor, Theme.dark.bg.nsColor)
+
+        view.apply(TerminalAppearance(theme: .dark, fontName: "Fonte Que Nao Existe", fontSize: 11))
+        XCTAssertEqual(view.font.pointSize, 11, "fonte desconhecida cai na monoespaçada do sistema")
+    }
+
+    func testHangUpKillsAProcessThatIgnoresSIGHUP() {
+        let view = makeView()
+        view.startProcess(executable: "/bin/sh", args: ["-c", "trap '' HUP; printf pronto; read x"],
+                          environment: environment, currentDirectory: "/")
+        XCTAssertTrue(waitUntil { view.linesAboveCursor().isEmpty && view.getTerminal().getCursorLocation().x == 6 })
+        let pid = view.process.shellPid
+        XCTAssertEqual(kill(pid, 0), 0)
+
+        ProcessReaper.hangUp(pid, grace: 0.3)
+        // Um zumbi ainda responde ao sinal 0: sumir da tabela prova que o filho foi recolhido.
+        XCTAssertTrue(waitUntil(timeout: 5) { kill(pid, 0) != 0 })
+    }
+
+    func testHangUpIgnoresInvalidPids() {
+        ProcessReaper.hangUp(0)
+        ProcessReaper.hangUp(1)
+        ProcessReaper.hangUp(-1)
+    }
+}

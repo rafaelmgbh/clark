@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>pt-BR</string>
+    <key>CFBundleDisplayName</key>
+    <string>CLARK</string>
+    <key>CFBundleExecutable</key>
+    <string>Clark</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.rafaelmgbh.clark</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>CLARK</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <!-- As duas versões são preenchidas pelo build.sh a partir de `Clark --version`. -->
+    <key>CFBundleShortVersionString</key>
+    <string>0.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.developer-tools</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <!--
+      O macOS cobra do CLARK as permissões que os programas dos agentes pedem.
+      Sem o texto abaixo, o pedido do programa é negado sem nenhuma pergunta.
+    -->
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Um programa rodando num agente do CLARK quer controlar outro app.</string>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>Um programa rodando num agente do CLARK quer acessar a Mesa.</string>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>Um programa rodando num agente do CLARK quer acessar os Documentos.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>Um programa rodando num agente do CLARK quer acessar os Downloads.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Um programa rodando num agente do CLARK quer acessar a rede local.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Um programa rodando num agente do CLARK quer usar o microfone.</string>
+</dict>
+</plist>
