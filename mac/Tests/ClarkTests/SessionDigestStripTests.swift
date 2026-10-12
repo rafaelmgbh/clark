@@ -77,6 +77,24 @@ final class SessionDigestStripTests: XCTestCase {
         XCTAssertEqual(pane.terminal.frame.minY, pane.digestView.frame.maxY + 4, "o terminal começa depois da faixa")
     }
 
+    func testChangedFilesColumnOpensUnderTheStrip() {
+        let api = fixture.temp.makeDirectory("Projetos/acme/api")
+        conversation(previous, in: api, title: "Ajuste do relatório")
+        let controller = fixture.started(claude: claude)
+        controller.addAgents(1, in: api)
+        let pane = controller.panes[0]
+        XCTAssertTrue(waitUntil { pane.digest != nil })
+        pane.frame = NSRect(x: 0, y: 0, width: 900, height: 500)
+        pane.toggleChangedFiles()
+        pane.layoutSubtreeIfNeeded()
+
+        XCTAssertFalse(pane.changedFiles.isHidden)
+        XCTAssertEqual(pane.digestView.frame.width, 900 - 2 * CGFloat(AgentPaneView.border), "a faixa não perde largura")
+        XCTAssertEqual(pane.changedFiles.frame.minY, pane.digestView.frame.maxY, "a coluna divide só o terminal")
+        XCTAssertEqual(pane.changedFiles.frame.maxY, 500 - CGFloat(AgentPaneView.border))
+        XCTAssertEqual(pane.terminal.frame.minY, pane.digestView.frame.maxY + 4)
+    }
+
     func testDigestGoesAwayWhenTheUserTypes() {
         let api = fixture.temp.makeDirectory("Projetos/acme/api")
         conversation(previous, in: api, title: "Ajuste do relatório")

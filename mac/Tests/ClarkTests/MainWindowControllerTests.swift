@@ -680,6 +680,14 @@ final class MainWindowControllerTests: XCTestCase {
         let image = RenderedImage(bypass, width: 660, height: 450)
         XCTAssertTrue(image.isColor(Theme.dark.red, atX: 10, y: 37), "faixa SEM PERMISSOES")
         XCTAssertEqual(bypass.terminal.frame.minY - plainTop, CGFloat(AgentPaneView.stripHeight))
+
+        // A coluna dos arquivos alterados fica abaixo da faixa, não por cima dela.
+        bypass.frame = NSRect(x: 0, y: 0, width: 900, height: 450)
+        bypass.toggleChangedFiles()
+        bypass.layoutSubtreeIfNeeded()
+        XCTAssertFalse(bypass.changedFiles.isHidden)
+        XCTAssertEqual(bypass.changedFiles.frame.minY,
+                       bypass.header.frame.maxY + 2 + CGFloat(AgentPaneView.stripHeight))
     }
 
     func testWithoutClaudeTheAgentOpensTheShellWithAWarning() {

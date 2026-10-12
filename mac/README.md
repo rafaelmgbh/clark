@@ -110,6 +110,14 @@ O ⌘⇧D abre a janela do diff do agente em foco: à esquerda os arquivos mudad
 arquivo escolhido. O botão direito no cabeçalho de um agente tem o mesmo `Ver diff`. A janela é
 uma só: pedir o diff de outro agente troca o conteúdo dela.
 
+Clicar no resumo do cabeçalho abre, à direita do terminal daquele agente, a coluna `ALTERADOS`: os
+arquivos em grupos (`MODIFICADOS`, `NOVOS`, `REMOVIDOS`, `NAO RASTREADOS`), cada um com o nome, a
+pasta embaixo e as linhas a mais e a menos. Clicar num arquivo abre a janela do diff já nele. O `R`
+relê e o `X` fecha; outro clique no resumo também fecha. O botão direito no cabeçalho tem o mesmo
+`Arquivos alterados`. Cada agente tem a sua coluna, e ela não tira o foco do terminal. Em painel
+com menos de 602 pontos de largura a coluna não cabe ao lado do terminal: o clique abre a janela
+do diff.
+
 - O diff é do repositório inteiro, mesmo com o agente numa subpasta. Entram as mudanças já
   preparadas com `git add` e os arquivos novos ainda não rastreados; os ignorados ficam de fora.
 - O CLARK relê o repositório quando o agente abre, quando ele para de trabalhar, quando o CLARK

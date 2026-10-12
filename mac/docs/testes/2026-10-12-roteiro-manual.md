@@ -11,6 +11,7 @@ usa a tela, o teclado e a conta do `claude`. Nada aqui é automatizado.
 | Menu de projetos (`443277d`) | coberto pelos testes | nunca; nem o clique no botão `PROJETO` |
 | Início no `GLOBAL`, menu por empresa, projeto no cabeçalho, apelidos e última sessão (commit seguinte ao `ab24420`) | 391 testes verdes, 7 mutações mortas, imagens renderizadas nos testes | nunca |
 | Menu com grupos por pasta e worktrees à parte, medidor de consumo na barra e estado `SHELL` (commit seguinte ao `721b889`) | 451 testes verdes, 30 mutações mortas (13 do menu e do medidor, 17 do `SHELL`), menu conferido contra as pastas reais, arquivo de sessão conferido num agente real | nunca |
+| Coluna de arquivos alterados (commit seguinte ao `7cc4de7`) | 500 testes verdes, 78 mutações mortas, imagens renderizadas nos testes | nunca |
 | Ícone do dragão (`7fa1ec6`) | coberto pelos testes | nunca |
 | Núcleo do M1 (`80cb7e8`) | coberto pelos testes | em uso, mas o roteiro da Task 15 do plano nunca foi rodado inteiro |
 | `Tests/packaging.sh` depois do diff | não rodou: exige o CLARK fechado | não se aplica |
@@ -21,7 +22,8 @@ a compilação com o diff: em 2026-10-11 o executável instalado era idêntico a
 ## Preparação
 
 1. Confirme a versão instalada: o menu `Agentes` tem os itens `Ver diff`, `Atualizar diff` e
-   `Apelidar projeto…`. Se faltar algum, saia do CLARK (⌘Q) e rode, de dentro de `mac/`:
+   `Apelidar projeto…`, e o botão direito no cabeçalho de um agente tem `Arquivos alterados`. Se
+   faltar algum, saia do CLARK (⌘Q) e rode, de dentro de `mac/`:
 
    ```bash
    ./build.sh && ./install.sh
@@ -134,6 +136,60 @@ a compilação com o diff: em 2026-10-11 o executável instalado era idêntico a
   Esperado: os números batem com `git diff --shortstat HEAD` somado aos arquivos novos de
   `git status`; a janela abre sem demora perceptível; `git status` no Terminal não mostra nada que
   o CLARK tenha criado ou preparado.
+
+### Coluna de arquivos alterados
+
+Estes passos usam o mesmo `/tmp/clark-diff`, no estado da preparação. Os passos A9 a A15 mexem
+nele. Para os números abaixo baterem, desfaça o que eles fizeram e aperte ⌘R no CLARK:
+
+```bash
+cd /tmp/clark-diff && git checkout -q -- b.txt && rm -f longo.txt bin.dat teste.txt e.txt
+```
+
+- [ ] **A17. Abrir pelo resumo.** Com a janela larga e o agente de `/tmp/clark-diff` em foco, clique
+  no `+5 -2 4 ARQ` do cabeçalho. Esperado: abre uma coluna à direita do terminal, com
+  `ALTERADOS 4` no topo e os botões `R` e `X`; o terminal estreita e o `claude` se redesenha na
+  largura nova; o cabeçalho segue no estado em que estava, sem passar por `WORKING`. Sem clicar em
+  mais nada, digite: o texto cai no terminal.
+
+- [ ] **A18. Grupos e linhas.** Esperado, de cima para baixo: `MODIFICADOS 1` com `M`, `a.txt` e
+  `+2 -1`; `NOVOS 1` com `A`, `d.txt` e `+1 -0`; `REMOVIDOS 1` com `D`, `c.txt` e `+0 -1`;
+  `NAO RASTREADOS 1` com `?`, `novo.txt`, `+2 -0` e `sub` na linha de baixo. As letras têm as
+  cores da janela do diff (`M` amarelo, `D` vermelho, `A` e `?` verdes). O mouse acende a linha de
+  um arquivo, e não a do título de um grupo.
+
+- [ ] **A19. Clique num arquivo.** Clique em `c.txt` na coluna. Esperado: a janela do diff abre com
+  `c.txt` escolhido na lista e a remoção de `some` à direita. Sem fechar a janela, volte ao CLARK
+  e clique em `novo.txt` na coluna: a janela passa para ele.
+
+- [ ] **A20. Fechar.** Clique no `X`. Esperado: a coluna some e o terminal volta à largura toda.
+  Abra de novo pelo resumo e feche com outro clique no resumo. Um duplo clique no resumo abre e
+  fecha a coluna, e não abre o campo de renomear.
+
+- [ ] **A21. Menu do cabeçalho.** Botão direito no cabeçalho, `Arquivos alterados`. Esperado: a
+  coluna abre. Abra o menu de novo: o item vem marcado, e escolhê-lo fecha a coluna.
+
+- [ ] **A22. Uma coluna por agente.** Com a coluna aberta no agente de `/tmp/clark-diff`, ponha em
+  foco o agente de `/tmp/clark-diff/sub`. Esperado: ele está sem coluna. Volte ao primeiro: a
+  coluna dele continua aberta.
+
+- [ ] **A23. Painel estreito.** Com a coluna aberta, estreite a janela principal aos poucos.
+  Esperado: quando o terminal ficaria com menos de 320 pontos, a coluna some e o terminal toma a
+  largura toda; alargando, ela volta sozinha. Num painel estreito em que o resumo ainda aparece
+  (na grade, ⌘L, com vários agentes), clique no resumo: abre a janela do diff, e não a coluna.
+
+- [ ] **A24. Reler.** Com a coluna aberta, rode no Terminal
+  `(sleep 15; echo x > /tmp/clark-diff/e.txt) &` e volte para o CLARK antes dos 15 segundos.
+  Espere uns 30 segundos. Esperado: a coluna não muda sozinha. Clique no `R`: o título vira
+  `ALTERADOS 5` e `e.txt` entra em `NAO RASTREADOS 2`, sem a linha da pasta, porque está na raiz.
+
+- [ ] **A25. Avisos.** No agente de `/tmp/clark-limpo`, botão direito no cabeçalho e
+  `Arquivos alterados`. Esperado: a coluna abre com `ALTERADOS 0` e `NADA MUDOU`. No de
+  `/tmp/clark-vazio`: `ALTERADOS` e `FORA DE REPOSITORIO GIT`.
+
+- [ ] **A26. Com a faixa da última sessão.** Abra um agente novo num projeto que já teve conversa,
+  para a faixa `ULTIMA SESSAO` aparecer, e abra a coluna pelo menu do cabeçalho. Esperado: a faixa
+  fica com a largura toda e a coluna começa abaixo dela, ao lado do terminal.
 
 ## B. Projetos, apelidos, última sessão e ícone
 
@@ -305,5 +361,8 @@ E no que veio depois, também sem consulta:
 - `SHELL` é um estado próprio, em ciano e com os pontos andando, e conta em `WORKING` na barra.
 - A faixa some na primeira tecla, e não fica guardada para rever.
 - Card da lista lateral mais alto (104 px), com o projeto numa linha própria.
+- Na coluna de arquivos alterados: em painel estreito o clique no resumo abre a janela do diff, e a
+  coluna pede 320 pontos de terminal; o menu do cabeçalho tem `Arquivos alterados`; arquivo da raiz
+  fica numa linha mais baixa, sem a pasta; a coluna não é lembrada ao reabrir o app.
 
 Fora do teste, segue aberta a ampliação dos nomes de segredo com `*_PASS`, `*_PWD` e `*_PAT`.

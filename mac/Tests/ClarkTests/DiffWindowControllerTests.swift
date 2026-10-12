@@ -118,6 +118,48 @@ final class DiffWindowControllerTests: XCTestCase {
         XCTAssertFalse(panel.text.contains("+dois"))
     }
 
+    func testChoosingAFileByItsPathShowsItsDiff() throws {
+        let repo = try repository()
+        let (controller, _) = started()
+        let pane = agent(in: repo.path, of: controller)
+        XCTAssertTrue(waitUntil { pane.snapshot.diff != nil })
+        let panel = controller.diffPanel(for: pane)
+        XCTAssertTrue(waitUntil { panel.text.contains("+dois") })
+
+        panel.select(path: "novo.txt")
+        XCTAssertEqual(panel.selectedPath, "novo.txt")
+        XCTAssertEqual(panel.table.selectedRow, 1, "a tabela acompanha")
+        XCTAssertTrue(waitUntil { panel.text.contains("+linha nova") })
+        XCTAssertFalse(panel.text.contains("+dois"))
+    }
+
+    func testPathChosenBeforeTheFirstReadIsShownWhenTheReadArrives() throws {
+        let repo = try repository()
+        let (controller, _) = started()
+        let pane = agent(in: repo.path, of: controller)
+        let panel = controller.diffPanel(for: pane)
+        XCTAssertEqual(panel.files, [])
+
+        panel.select(path: "novo.txt")
+        XCTAssertTrue(waitUntil { panel.text.contains("+linha nova") })
+        XCTAssertEqual(panel.selectedPath, "novo.txt")
+        XCTAssertEqual(panel.table.selectedRow, 1)
+    }
+
+    func testPathThatIsNotInTheListLeavesTheChoiceAlone() throws {
+        let repo = try repository()
+        let (controller, _) = started()
+        let pane = agent(in: repo.path, of: controller)
+        XCTAssertTrue(waitUntil { pane.snapshot.diff != nil })
+        let panel = controller.diffPanel(for: pane)
+        XCTAssertTrue(waitUntil { panel.text.contains("+dois") })
+
+        panel.select(path: "sumiu.txt")
+        XCTAssertEqual(panel.selectedPath, "a.txt")
+        XCTAssertEqual(panel.table.selectedRow, 0)
+        XCTAssertTrue(panel.text.contains("+dois"))
+    }
+
     func testPanelOpenedBeforeTheFirstReadFillsItselfWhenTheReadArrives() throws {
         let repo = try repository()
         let (controller, _) = started()
@@ -240,8 +282,9 @@ final class DiffWindowControllerTests: XCTestCase {
         let first = agent(in: repo.path, of: controller)
         _ = agent(in: repo.path, of: controller)
         let menu = first.contextMenu()
-        XCTAssertEqual(menu.items.prefix(6).map(\.title),
-                       ["Renomear…", "Apelidar projeto…", "Zoom", "Ver diff", "Novo agente nesta pasta", "Fechar"])
+        XCTAssertEqual(menu.items.prefix(7).map(\.title),
+                       ["Renomear…", "Apelidar projeto…", "Zoom", "Ver diff", "Arquivos alterados",
+                        "Novo agente nesta pasta", "Fechar"])
         let item = try XCTUnwrap(menu.items.first { $0.title == "Ver diff" })
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item))
         XCTAssertEqual(shown().count, 1)

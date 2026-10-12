@@ -10,7 +10,9 @@ struct RenderedImage {
     private let bytes: [UInt8]
     private let bytesPerRow: Int
 
-    init(_ view: PixelView, width: Int, height: Int, file: StaticString = #filePath, line: UInt = #line) {
+    /// - Parameter dirty: desenha pelo `draw`, como o AppKit faz, pedindo só este retângulo.
+    init(_ view: PixelView, width: Int, height: Int, dirty: NSRect? = nil, file: StaticString = #filePath,
+         line: UInt = #line) {
         self.width = width
         self.height = height
         view.frame = NSRect(x: 0, y: 0, width: width, height: height)
@@ -28,7 +30,11 @@ struct RenderedImage {
         context.setShouldAntialias(false)
         let previous = NSGraphicsContext.current
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
-        view.render(context, width: width, height: height)
+        if let dirty {
+            view.draw(dirty)
+        } else {
+            view.render(context, width: width, height: height)
+        }
         NSGraphicsContext.current = previous
         bytesPerRow = context.bytesPerRow
         if let data = context.data {

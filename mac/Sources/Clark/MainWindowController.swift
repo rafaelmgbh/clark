@@ -339,8 +339,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     /// Abre a janela do diff no agente, com uma leitura nova do repositório.
-    private func presentDiff(of pane: AgentPaneView) {
+    /// - Parameter path: arquivo que a janela já abre mostrando. Sem ele, o que estava escolhido ou o primeiro.
+    private func presentDiff(of pane: AgentPaneView, path: String? = nil) {
         let panel = diffPanel(for: pane)
+        if let path { panel.select(path: path) }
         pane.diff.refresh()
         present(panel)
     }
@@ -628,6 +630,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     func paneRequestsDiff(_ pane: AgentPaneView) { presentDiff(of: pane) }
+    func paneRequestsDiff(_ pane: AgentPaneView, path: String) { presentDiff(of: pane, path: path) }
     func paneRequestsSelect(_ pane: AgentPaneView) { select(pane) }
     func paneRequestsZoom(_ pane: AgentPaneView) { toggleZoom(of: pane) }
     func paneRequestsClose(_ pane: AgentPaneView) { close(pane) }

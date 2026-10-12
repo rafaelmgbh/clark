@@ -69,12 +69,16 @@ protocol AgentPaneDelegate: AnyObject {
     /// Mais um agente na mesma pasta.
     func paneRequestsSibling(_ pane: AgentPaneView)
     func paneRequestsDiff(_ pane: AgentPaneView)
+    /// A janela do diff já no arquivo, escolhido na coluna dos arquivos alterados.
+    func paneRequestsDiff(_ pane: AgentPaneView, path: String)
 }
 
 /// Painel de um agente: moldura, cabeçalho, faixa de aviso, resumo da última sessão e o terminal.
 final class AgentPaneView: PixelView {
     static let border = 3
     static let stripHeight = 16
+    /// Largura que o terminal tem de manter para a coluna dos arquivos alterados caber ao lado dele.
+    static let minTerminalWidth = 320
     static let gameOver = "\r\n\r\n\u{1b}[1;41;97m  GAME OVER  \u{1b}[0m  "
         + "\u{1b}[2mENTER = continue?  CMD+W = sair\u{1b}[0m\r\n"
     static let missingClaude = "\r\n\u{1b}[1;31m  claude nao encontrado no PATH.\u{1b}[0m "
@@ -109,6 +113,10 @@ final class AgentPaneView: PixelView {
 
     let header: AgentHeaderView
     let digestView = SessionDigestView()
+    /// Arquivos alterados no repositório, ao lado do terminal.
+    let changedFiles = ChangedFilesView()
+    /// A coluna dos arquivos alterados foi pedida. Num painel estreito ela fica escondida até caber.
+    private(set) var showsChangedFiles = false
     private let zoomButton = PixelButton(title: "[ ]", style: .mini, toolTip: "Zoom (⌘↩)")
     private let closeButton = PixelButton(title: "X", style: .miniClose, toolTip: "Fechar (⌘W)")
     private let launch: AgentLaunch
@@ -160,6 +168,7 @@ final class AgentPaneView: PixelView {
         header.snapshot = snapshot
         header.onClick = { [weak self] in self.map { $0.delegate?.paneRequestsSelect($0) } }
         header.onDoubleClick = { [weak self] in self.map { $0.delegate?.paneRequestsRename($0) } }
+        header.onBadgeClick = { [weak self] in self?.toggleChangedFiles() }
         header.menuProvider = { [weak self] in self?.contextMenu() }
         zoomButton.onClick = { [weak self] in self.map { $0.delegate?.paneRequestsZoom($0) } }
         closeButton.onClick = { [weak self] in self.map { $0.delegate?.paneRequestsClose($0) } }
@@ -167,10 +176,18 @@ final class AgentPaneView: PixelView {
         digestView.theme = appearance.theme
         digestView.isHidden = true
         digestView.onDismiss = { [weak self] in self?.dismissDigest() }
+        changedFiles.theme = appearance.theme
+        changedFiles.isHidden = true
+        changedFiles.onRefresh = { [weak self] in self?.diff.refresh() }
+        changedFiles.onClose = { [weak self] in self?.setChangedFiles(shown: false) }
+        changedFiles.onSelect = { [weak self] file in
+            self.map { $0.delegate?.paneRequestsDiff($0, path: file.path) }
+        }
         addSubview(header)
         addSubview(zoomButton)
         addSubview(closeButton)
         addSubview(digestView)
+        addSubview(changedFiles)
         install(terminal)
     }
 
@@ -373,11 +390,39 @@ final class AgentPaneView: PixelView {
         needsDisplay = true
     }
 
+    /// Abre ou fecha a coluna dos arquivos alterados. Num painel estreito demais para ela, abre a janela
+    /// do diff, que mostra a mesma lista.
+    func toggleChangedFiles() {
+        if showsChangedFiles {
+            setChangedFiles(shown: false)
+        } else if changedFilesFit {
+            setChangedFiles(shown: true)
+        } else {
+            delegate?.paneRequestsDiff(self)
+        }
+    }
+
+    private func setChangedFiles(shown: Bool) {
+        guard shown != showsChangedFiles else { return }
+        showsChangedFiles = shown
+        // A lista é a da última leitura, e o repositório pode ter mudado desde então.
+        if shown { diff.refresh() }
+        // O terminal muda de largura: o redesenho do agente não conta como trabalho.
+        machine.layoutChanged(now: clock())
+        needsLayout = true
+    }
+
+    /// O terminal não fica mais estreito que o mínimo para dar lugar à coluna.
+    private var changedFilesFit: Bool {
+        Int(bounds.width) - 2 * Self.border - 12 - ChangedFilesView.width >= Self.minTerminalWidth
+    }
+
     func apply(_ appearance: TerminalAppearance) {
         terminalAppearance = appearance
         theme = appearance.theme
         header.theme = appearance.theme
         digestView.theme = appearance.theme
+        changedFiles.theme = appearance.theme
         zoomButton.theme = appearance.theme
         closeButton.theme = appearance.theme
         terminal.apply(appearance)
@@ -388,6 +433,7 @@ final class AgentPaneView: PixelView {
         if reportedState == .working && machine.state != .working { diff.refresh() }
         reportedState = machine.state
         header.snapshot = snapshot
+        changedFiles.state = diff.state
         needsDisplay = true
         delegate?.paneDidChange(self)
     }
@@ -405,6 +451,10 @@ final class AgentPaneView: PixelView {
         menu.addItem(nickname)
         menu.addItem(actionItem("Zoom") { [weak self] in self.map { $0.delegate?.paneRequestsZoom($0) } })
         menu.addItem(actionItem("Ver diff") { [weak self] in self.map { $0.delegate?.paneRequestsDiff($0) } })
+        // O resumo do cabeçalho, que abre a coluna com um clique, some quando o cabeçalho é estreito.
+        let files = actionItem("Arquivos alterados") { [weak self] in self?.toggleChangedFiles() }
+        files.state = showsChangedFiles ? .on : .off
+        menu.addItem(files)
         menu.addItem(actionItem("Novo agente nesta pasta") { [weak self] in
             self.map { $0.delegate?.paneRequestsSibling($0) }
         })
@@ -466,8 +516,13 @@ final class AgentPaneView: PixelView {
                                    height: AgentHeaderView.height)
         let stripBottom = headerBottom + (bypassesPermissions ? Self.stripHeight : 0)
         digestView.frame = NSRect(x: border, y: stripBottom, width: max(0, width - 2 * border), height: digestHeight)
-        let top = stripBottom + digestHeight + 4
-        terminal.frame = NSRect(x: border + 6, y: top, width: max(1, width - 2 * border - 12),
+        let bodyTop = stripBottom + digestHeight
+        let column = showsChangedFiles && changedFilesFit ? ChangedFilesView.width : 0
+        changedFiles.isHidden = column == 0
+        changedFiles.frame = NSRect(x: width - border - column, y: bodyTop, width: column,
+                                    height: max(0, height - border - bodyTop))
+        let top = bodyTop + 4
+        terminal.frame = NSRect(x: border + 6, y: top, width: max(1, width - 2 * border - 12 - column),
                                 height: max(1, height - top - border - 4))
     }
 

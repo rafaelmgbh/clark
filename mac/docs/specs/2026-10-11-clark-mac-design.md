@@ -78,6 +78,7 @@ mac/
 | `SessionDigest` | Resumo da última conversa do Claude Code numa pasta, tirado do fim do arquivo da conversa. | sistema de arquivos |
 | `UsageMeter` | Consumo do plano do Claude lido do arquivo de cache do AiUsageBar: janelas de 5 horas e de 7 dias, nível, idade da leitura e o texto da dica. | sistema de arquivos |
 | `GitDiff`, `GitLocator` | Interpreta a saída do git em arquivos com estado e contagem de linhas, soma os totais e classifica as linhas de um diff; acha o `git` no `PATH` capturado. | sistema de arquivos |
+| `ChangedFiles` | Linhas da coluna de arquivos alterados: os grupos por estado, na ordem, e o nome de cada arquivo separado da pasta. | nada |
 
 ### Clark (AppKit)
 
@@ -91,6 +92,7 @@ mac/
 | `GitRunner` | Roda o git na pasta de um agente, só para ler, com tempo e tamanho limitados. |
 | `DiffMonitor` | Lê o diff da pasta de um agente fora da thread principal e guarda o último resultado. |
 | `DiffBadge`, `DiffWindowController` | Resumo do diff no cabeçalho e no card; janela única com a lista de arquivos e o diff do escolhido. |
+| `ChangedFilesView` | Coluna dos arquivos alterados ao lado do terminal do agente; o clique num arquivo abre a janela do diff nele. |
 | `QueueWatcher` | Observa os arquivos de estado e chama os helpers das skills quando mudam. |
 | `QueuePanelView` | Desenha a fila e o botão de abrir agente na worktree. |
 | `SplashView`, `DragonLayer`, `PixelRenderer` | Splash animada, dragões por agente, desenho de texto e sprites em CoreGraphics. |
@@ -178,6 +180,8 @@ Não existe no original. Cada agente mostra o que mudou no repositório da sua p
 **Resumo.** O cabeçalho e o card trazem `+12 -3 4 ARQ`: linhas a mais em verde, linhas a menos em vermelho e a quantidade de arquivos. Repositório sem mudança, pasta fora de repositório e máquina sem `git` não mostram resumo. Quando falta largura, a empresa fica e o resumo sai.
 
 **Janela.** O ⌘⇧D e o `Ver diff` do menu do cabeçalho abrem a janela do diff: à esquerda os arquivos (estado, caminho, contagem), à direita o diff unificado do arquivo escolhido, com uma cor por tipo de linha. A janela é uma só no app, e pedir o diff de outro agente troca o conteúdo dela. Com ela na frente, o ⌘W fecha a janela e não o agente. Fechada, ela larga o agente e não lê mais nada. Fechar o agente mostrado fecha a janela.
+
+**Coluna de arquivos.** Clicar no resumo do cabeçalho, ou o `Arquivos alterados` do menu dele, abre uma coluna de 264 pontos à direita do terminal daquele agente. A faixa `SEM PERMISSOES` e a `ULTIMA SESSAO` ficam acima dela, com a largura toda. No topo vêm `ALTERADOS N`, o `R` que relê e o `X` que fecha; outro clique no resumo também fecha. A lista é plana, em grupos na ordem `MODIFICADOS`, `NOVOS`, `REMOVIDOS`, `NAO RASTREADOS`, cada um com a sua contagem. O arquivo traz a letra do estado, o nome, a pasta embaixo e `+N -N`, ou `-` quando não há contagem; arquivo da raiz do repositório não tem a linha da pasta. Clicar num arquivo abre a janela do diff daquele agente já nesse arquivo. Abrir a coluna relê o repositório, e depois ela acompanha as leituras do agente. Sem arquivo para listar, o corpo diz o motivo: `LENDO...`, `NADA MUDOU`, `FORA DE REPOSITORIO GIT`, `GIT NAO ENCONTRADO` ou `O GIT NAO RESPONDEU`. Lista cortada pelo limite de tamanho ganha `INCOMPLETA` ao lado do título. A coluna só abre se sobram 320 pontos para o terminal: em painel mais estreito o clique abre a janela do diff, e a coluna já aberta some enquanto o painel está estreito e volta quando ele alarga. O redesenho do terminal ao abrir e ao fechar a coluna não conta como trabalho do agente. Clicar na coluna não tira o foco do terminal. Cada agente tem a sua, e ela não é lembrada ao reabrir o app.
 
 **O que entra.** O repositório inteiro, mesmo com o agente numa subpasta, contra o `HEAD`: mudanças preparadas e não preparadas, e os arquivos não rastreados que o `.gitignore` não cobre. Repositório sem commit é comparado com a árvore vazia. Renomeação aparece como um arquivo removido e outro novo. Submódulo fica de fora.
 
@@ -289,9 +293,9 @@ Tudo em `~/.config/clark/`.
 | Falha ao gravar config | O estado em memória segue valendo; a barra avisa, uma vez, que os agentes não voltam ao reabrir. |
 | Pasta de um agente salvo não existe mais | O agente abre na home, numa conversa nova; aviso na barra. |
 | Fila indisponível | Ver Painel da fila. |
-| `git` não encontrado | Nenhum agente mostra resumo de diff; a janela do diff diz que não achou o git. |
-| A pasta do agente não é repositório | Sem resumo; a janela do diff diz isso. |
-| O git falha ou não responde em 10 s | Sem resumo; a janela do diff avisa. A próxima leitura tenta de novo. |
+| `git` não encontrado | Nenhum agente mostra resumo de diff; a janela do diff e a coluna de arquivos dizem que não acharam o git. |
+| A pasta do agente não é repositório | Sem resumo; a janela do diff e a coluna de arquivos dizem isso. |
+| O git falha ou não responde em 10 s | Sem resumo; a janela do diff e a coluna de arquivos avisam. A próxima leitura tenta de novo. |
 
 ## Testes
 
@@ -306,8 +310,9 @@ Tudo em `~/.config/clark/`.
 - `QueueStatus`: amostras sintéticas no formato real dos dois helpers, sem dado de cliente; JSON truncado dá erro tratado.
 - `GridLayout`: mesmas contas do original para 1 a 16 painéis.
 - `GitDiff`: saída do git com caminhos estranhos (espaço, tabulação, `:` e `*`), binário sem contagem, totais e rótulos do resumo, tipo de cada linha do diff.
+- `ChangedFiles`: grupos na ordem, grupo vazio de fora, contagem de cada grupo, nome e pasta de cada caminho.
 
-`swift test` em `ClarkTests` cobre a interface sem depender da tela: o terminal com processo de verdade (saída, sino, entrada, leitura do buffer, links, pedido de leitura da área de transferência), a captura do ambiente do shell e a sonda do que o rc devolve, o desenho das views de pixel e o `MainWindowController` (abrir, fechar, restaurar, foco, grade, zoom, renomear, menus e avisos). O diff roda contra o git de verdade em repositórios temporários: a lista e o diff de cada tipo de arquivo, o repositório com config hostil (nada do que ele aponta é executado), as variáveis `GIT_*` herdadas, o git que trava, as releituras do `DiffMonitor` e a janela do diff em cada estado.
+`swift test` em `ClarkTests` cobre a interface sem depender da tela: o terminal com processo de verdade (saída, sino, entrada, leitura do buffer, links, pedido de leitura da área de transferência), a captura do ambiente do shell e a sonda do que o rc devolve, o desenho das views de pixel e o `MainWindowController` (abrir, fechar, restaurar, foco, grade, zoom, renomear, menus e avisos). O diff roda contra o git de verdade em repositórios temporários: a lista e o diff de cada tipo de arquivo, o repositório com config hostil (nada do que ele aponta é executado), as variáveis `GIT_*` herdadas, o git que trava, as releituras do `DiffMonitor` e a janela do diff em cada estado. A coluna de arquivos alterados é conferida pelo desenho (título, grupos, linhas, aviso no lugar da lista, só o trecho pedido) e dentro do painel: abre e fecha pelo resumo, pelo `X` e pelo menu, relê ao abrir, toma a largura do terminal sem passar por cima das faixas, some em painel estreito e leva o clique num arquivo até a janela do diff.
 
 `Tests/packaging.sh` cobre o `install.sh` e o atalho `clark` numa HOME temporária.
 

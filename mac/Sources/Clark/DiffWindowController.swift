@@ -241,6 +241,21 @@ final class DiffWindowController: NSWindowController, NSWindowDelegate, NSTableV
         isReloading = false
     }
 
+    /// Escolhe o arquivo pelo caminho, como se tivesse sido clicado na lista. Com a lista ainda por
+    /// chegar, a escolha vale para a leitura que vem. Caminho que a lista não tem não muda nada.
+    func select(path: String) {
+        guard let row = files.firstIndex(where: { $0.path == path }) else {
+            if files.isEmpty { selectedPath = path }
+            return
+        }
+        selectedPath = path
+        isReloading = true
+        table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        isReloading = false
+        table.scrollRowToVisible(row)
+        loadSelected()
+    }
+
     func numberOfRows(in tableView: NSTableView) -> Int {
         files.count
     }

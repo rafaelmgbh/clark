@@ -240,6 +240,43 @@ final class PixelViewsTests: XCTestCase {
         XCTAssertEqual(doubles, 1)
     }
 
+    func testHeaderTellsWhereTheDiffSummaryIs() {
+        let diff = DiffSummary(files: 4, added: 12, removed: 3)
+        let header = AgentHeaderView(snapshot: snapshot(.idle, diff: diff))
+        header.frame = NSRect(x: 0, y: 0, width: 600, height: AgentHeaderView.height)
+        let badgeX = pillOrigin(width: 600).x - 10 - DiffBadge.width(diff)
+        XCTAssertEqual(header.badgeRect, NSRect(x: badgeX - 5, y: 0, width: DiffBadge.width(diff) + 10,
+                                                height: AgentHeaderView.height),
+                       "a altura inteira do cabeçalho e uma folga dos lados: o texto tem 7 pontos de altura")
+
+        header.snapshot = snapshot(.idle)
+        XCTAssertNil(header.badgeRect, "sem mudanças não há resumo")
+        header.snapshot = snapshot(.idle, diff: diff)
+        header.frame = NSRect(x: 0, y: 0, width: 240, height: AgentHeaderView.height)
+        XCTAssertNil(header.badgeRect, "no cabeçalho estreito o resumo não é desenhado")
+    }
+
+    func testClickOnTheDiffSummaryIsNotAHeaderClick() {
+        var clicks = 0, doubles = 0, badge = 0
+        let header = AgentHeaderView(snapshot: snapshot(.idle, diff: DiffSummary(files: 4, added: 12, removed: 3)))
+        header.frame = NSRect(x: 0, y: 0, width: 600, height: AgentHeaderView.height)
+        header.onClick = { clicks += 1 }
+        header.onDoubleClick = { doubles += 1 }
+        header.onBadgeClick = { badge += 1 }
+        let rect = header.badgeRect ?? .zero
+        header.mouseDown(with: click(header, x: rect.midX, y: 15))
+        XCTAssertEqual([clicks, doubles, badge], [0, 0, 1])
+        header.mouseDown(with: click(header, x: rect.midX, y: 15, count: 2))
+        XCTAssertEqual([clicks, doubles, badge], [0, 0, 2], "o segundo clique fecha a lista, não abre o renomear")
+        header.mouseDown(with: click(header, x: rect.minX - 2, y: 15))
+        header.mouseDown(with: click(header, x: rect.maxX + 2, y: 15))
+        XCTAssertEqual([clicks, doubles, badge], [2, 0, 2], "fora do resumo o clique é do cabeçalho")
+
+        header.onBadgeClick = nil
+        header.mouseDown(with: click(header, x: rect.midX, y: 15))
+        XCTAssertEqual([clicks, doubles, badge], [3, 0, 2], "sem quem ouça, o resumo é parte do cabeçalho")
+    }
+
     // MARK: card
 
     private let cardWidth = 304
