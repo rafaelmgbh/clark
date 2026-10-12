@@ -69,6 +69,12 @@ lista lateral traz o nome, o projeto numa linha própria, na cor da empresa, e a
 O CLARK começa no `GLOBAL`: um agente na home, para o que não é de projeto nenhum. O ⌘N e o
 `+ AGENT` também abrem no `GLOBAL`. Para trabalhar num projeto, use o botão `PROJETO` da barra (⌘D):
 
+- `Mais usados`, no topo, traz até cinco pastas em que o Claude Code mais foi usado nos últimos 30
+  dias: a mais usada primeiro e, no empate, a usada por último. A conta sai das conversas que o
+  Claude Code guarda de cada pasta, sem chamar modelo nenhum, e vale também para o que foi aberto
+  fora do CLARK. Entra tudo o que o menu oferece nas empresas e as pastas apelidadas; o projeto vem
+  com a empresa na frente (`Acme › Api`). O `GLOBAL` não entra na conta, e sem conversa nenhuma o
+  bloco não aparece.
 - `GLOBAL` abre um agente na home.
 - Cada empresa é um submenu com os projetos dela. Escolher um abre um agente na pasta do projeto.
 - Projeto é a pasta com repositório git ou com instruções para agente (`CLAUDE.md`, `AGENTS.md`,

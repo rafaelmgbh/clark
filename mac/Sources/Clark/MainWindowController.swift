@@ -375,13 +375,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     static let otherFoldersTitle = "Outras pastas"
     static let worktreesTitle = "Worktrees"
     static let otherFolderTitle = "Outra pasta…"
+    static let mostUsedTitle = "Mais usados"
 
-    /// Menu do botão PROJETO, relido do disco a cada abertura: o `GLOBAL`, uma empresa por linha com
-    /// os projetos dela a um clique, as pastas apelidadas fora de toda empresa e a escolha de outra pasta.
+    /// Menu do botão PROJETO, relido do disco a cada abertura: os projetos mais usados, o `GLOBAL`,
+    /// uma empresa por linha com os projetos dela a um clique, as pastas apelidadas fora de toda
+    /// empresa e a escolha de outra pasta.
     func projectMenu() -> NSMenu {
         let menu = NSMenu(title: "Projeto")
-        var blocks: [[NSMenuItem]] = [[projectItem(ProjectNaming.global, path: home)]]
         let groups = launch?.projectGroups(nicknames: config.projectNames) ?? []
+        var blocks: [[NSMenuItem]] = [mostUsedItems(groups), [projectItem(ProjectNaming.global, path: home)]]
         blocks.append(groups.filter { !$0.folders.isEmpty }.map(companyItem))
         blocks.append(groups.filter { $0.folders.isEmpty }.flatMap(\.nicknamed).map(projectItem))
         let other = NSMenuItem(title: Self.otherFolderTitle, action: #selector(chooseFolder(_:)), keyEquivalent: "")
@@ -389,6 +391,37 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         blocks.append([other])
         Self.fill(menu, with: blocks)
         return menu
+    }
+
+    /// Bloco de cima do menu: as pastas em que o Claude Code mais foi usado, entre tudo o que o menu
+    /// oferece nas empresas e nas apelidadas. O `GLOBAL` não entra na conta: já é a linha seguinte.
+    private func mostUsedItems(_ groups: [ProjectGroup]) -> [NSMenuItem] {
+        guard let launch else { return [] }
+        // Pela pasta de verdade: é por ela que o Claude Code guarda a conversa de quem entrou por um link.
+        var offered: [String: (title: String, path: String)] = [:]
+        var order: [String] = []
+        func offer(_ title: String, _ path: String) {
+            let real = launch.canonical(path)
+            guard offered[real] == nil else { return }
+            offered[real] = (title, path)
+            order.append(real)
+        }
+        for group in groups {
+            // Fora do submenu da empresa o nome dela vai junto: dois projetos `Api` não se confundem.
+            let prefix = group.folders.isEmpty ? "" : group.name + " › "
+            let deep = group.sections.flatMap { ($0.folder.map { [$0] } ?? []) + $0.projects }
+            for entry in group.nicknamed + group.projects + deep + group.worktrees + group.others {
+                offer(prefix + entry.name, entry.path)
+            }
+            for folder in group.folders {
+                offer(group.folders.count == 1 ? group.name : prefix + PathTools.short(folder, home: home), folder)
+            }
+        }
+        let configDir = SessionLocator.configDir(environment: launch.baseEnvironment, home: launch.home)
+        let used = ProjectUsage.mostUsed(order, configDir: configDir, now: Date(timeIntervalSince1970: wallClock()))
+            .compactMap { offered[$0] }
+        guard !used.isEmpty else { return [] }
+        return [NSMenuItem.sectionHeader(title: Self.mostUsedTitle)] + used.map { projectItem($0.title, path: $0.path) }
     }
 
     /// Os blocos que têm item, com um separador entre eles.

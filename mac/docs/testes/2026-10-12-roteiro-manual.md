@@ -200,8 +200,14 @@ cd /tmp/clark-diff && git checkout -q -- b.txt && rm -f longo.txt bin.dat teste.
   home.
 
 - [ ] **B2. Clique no botão `PROJETO`.** Clique no botão da barra, sem usar o ⌘D. Esperado: o menu
-  abre logo abaixo dele, sem demora, com `GLOBAL`, as empresas e `Outra pasta…`. O título do botão
-  é sempre `PROJETO`.
+  abre logo abaixo dele, sem demora, com `Mais usados` no topo, `GLOBAL`, as empresas e
+  `Outra pasta…`. O título do botão é sempre `PROJETO`.
+
+- [ ] **B2a. Mais usados.** No topo do menu, confira o bloco `Mais usados`. Esperado: até cinco
+  linhas no formato `Empresa › Projeto`, e as primeiras são as pastas em que você mais usou o
+  Claude Code no último mês, dentro ou fora do CLARK; o `GLOBAL` não está entre elas; passar o
+  mouse mostra o caminho. Escolha uma: abre um agente naquela pasta, igual a escolher pelo submenu
+  da empresa. O título `Mais usados` não é clicável.
 
 - [ ] **B3. Submenu da empresa.** Abra uma empresa com vários projetos. Esperado, de cima para
   baixo: os apelidados; os projetos do primeiro nível e um submenu para cada pasta que guarda
@@ -389,6 +395,8 @@ E no que veio depois, também sem consulta:
   leva cor, a mesma em todos os agentes dela (o tom por agente fica no card); fora de empresa a
   palavra é `GLOBAL`, que substituiu `AVULSO` também em `CLARK_COMPANY`; o quadrado colorido saiu;
   as etiquetas não clicam.
+- No menu `PROJETO`: `Mais usados` conta as conversas que o Claude Code guarda de cada pasta nos
+  últimos 30 dias, e não o que foi aberto pelo CLARK; cinco linhas; o `GLOBAL` fica de fora.
 - No aviso de controle remoto: a palavra `REMOTO` em azul, no cabeçalho e no card; sem clique e
   sem o endereço da sessão; no cabeçalho apertado o resumo do diff sai antes dela.
 

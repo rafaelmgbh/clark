@@ -1272,6 +1272,149 @@ final class MainWindowControllerTests: XCTestCase {
         XCTAssertEqual(controller.panes.last?.directory, fixture.home, "o projeto recusado não fica na fila")
     }
 
+    // MARK: mais usados
+
+    /// Conversas do Claude Code na pasta, gravadas onde ele grava: `<config>/projects/<pasta>/<id>.jsonl`.
+    /// - Parameter age: há quantos segundos as conversas foram mexidas.
+    private func used(_ times: Int, in directory: String, age: TimeInterval = 60, configDir: String = ".claude") {
+        let canonical = PathTools.canonical(directory, base: fixture.home, home: fixture.home)
+        let folder = SessionDigestReader.projectFolder(canonicalDirectory: canonical, configDir: configDir)
+        for _ in 0..<times {
+            let path = fixture.temp.write(folder + "/\(UUID().uuidString.lowercased()).jsonl", "{}\n")
+            try? FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-age)],
+                                                   ofItemAtPath: path)
+        }
+    }
+
+    func testProjectMenuOpensWithTheMostUsedProjectsOnTop() {
+        let api = repository("Projetos/acme/api")
+        repository("Projetos/acme/portal")
+        let site = repository("Projetos/beta/site")
+        used(2, in: api)
+        used(5, in: site)
+        let controller = fixture.started()
+        let menu = controller.projectMenu()
+        XCTAssertEqual(outline(menu), [
+            "Mais usados", "beta › Site", "acme › Api", "-",
+            "GLOBAL", "-",
+            "acme >", "  Api", "  Portal", "  -", "  Pasta da empresa",
+            "beta >", "  Site", "  -", "  Pasta da empresa",
+            "-", "Outra pasta…",
+        ], "o mais usado vem primeiro; o que nunca foi usado só aparece na empresa")
+        XCTAssertTrue(menu.items[0].isSectionHeader, "o título do bloco não é uma escolha")
+        XCTAssertEqual(item(menu, "beta › Site")?.toolTip, "~/Projetos/beta/site")
+    }
+
+    func testChoosingASuggestionOpensAnAgentThere() {
+        let api = repository("Projetos/acme/api")
+        used(1, in: api)
+        let controller = fixture.started()
+        choose(item(controller.projectMenu(), "acme › Api"))
+        XCTAssertEqual(controller.panes.map(\.directory), [api])
+        XCTAssertEqual(controller.panes.map(\.project), ["Api"])
+        XCTAssertEqual(controller.panes.map(\.company.name), ["acme"])
+    }
+
+    func testUsedWorktreeIsSuggestedToo() {
+        let api = repository("Projetos/acme/api")
+        let chamado = fixture.home + "/Projetos/acme/api-431"
+        fixture.temp.write("Projetos/acme/api-431/.git", "gitdir: \(api)/.git/worktrees/api-431\n")
+        used(2, in: chamado)
+        used(1, in: api)
+        let controller = fixture.started()
+        let menu = controller.projectMenu()
+        XCTAssertEqual(Array(outline(menu).prefix(4)), ["Mais usados", "acme › Api 431", "acme › Api", "-"])
+        choose(item(menu, "acme › Api 431"))
+        XCTAssertEqual(controller.panes.map(\.directory), [chamado])
+    }
+
+    func testProjectNeverUsedIsNotSuggested() {
+        repository("Projetos/acme/api")
+        used(9, in: fixture.home)
+        let controller = fixture.started()
+        XCTAssertEqual(outline(controller.projectMenu()), [
+            "GLOBAL", "-", "acme >", "  Api", "  -", "  Pasta da empresa", "-", "Outra pasta…",
+        ], "o GLOBAL já é a primeira linha do menu: não entra na conta")
+    }
+
+    func testConversationsOlderThanTheWindowSuggestNothing() {
+        let api = repository("Projetos/acme/api")
+        used(3, in: api, age: ProjectUsage.window + 3600)
+        let controller = fixture.started()
+        XCTAssertNil(item(controller.projectMenu(), MainWindowController.mostUsedTitle))
+        used(1, in: api, age: 3600)
+        XCTAssertNotNil(item(controller.projectMenu(), "acme › Api"), "a conta é refeita a cada abertura do menu")
+    }
+
+    func testSuggestionsCoverEverythingTheMenuOffers() {
+        let api = repository("Projetos/acme/api")
+        let loja = repository("Projetos/acme/clientes/loja")
+        let drafts = fixture.temp.makeDirectory("Projetos/acme/rascunhos")
+        let notes = fixture.temp.makeDirectory("notas")
+        var config = ClarkConfig()
+        config.projectNames = [api: "Portal de Compras", notes: "Diário"]
+        used(5, in: api)
+        used(4, in: loja)
+        used(3, in: fixture.home + "/Projetos/acme")
+        used(2, in: drafts)
+        used(1, in: notes)
+        let controller = fixture.started(config: config)
+        let menu = controller.projectMenu()
+        XCTAssertEqual(Array(outline(menu).prefix(7)), [
+            "Mais usados", "acme › Portal de Compras", "acme › Loja", "acme", "acme › Rascunhos", "Diário", "-",
+        ], "o apelido, o projeto fundo, a pasta da empresa, a pasta que não é projeto e a apelidada sem empresa")
+        XCTAssertEqual(item(menu, "acme")?.toolTip, "~/Projetos/acme")
+        choose(item(menu, "acme › Loja"))
+        XCTAssertEqual(controller.panes.map(\.directory), [loja])
+    }
+
+    func testSuggestionsNameTheFolderOfACompanyThatHasMoreThanOne() {
+        repository("Projetos/acme/api")
+        fixture.temp.makeDirectory("trabalho/legado")
+        fixture.temp.write(".config/clark/companies.json", """
+        {"companies": [{"name": "ACME", "paths": ["~/Projetos/acme", "~/trabalho/legado"]}]}
+        """)
+        used(1, in: fixture.home + "/trabalho/legado")
+        let controller = fixture.started()
+        XCTAssertEqual(Array(outline(controller.projectMenu()).prefix(3)),
+                       ["Mais usados", "ACME › ~/trabalho/legado", "-"])
+    }
+
+    func testProjectReachedThroughALinkIsCountedWhereItReallyIs() {
+        let real = repository("Projetos/acme/arquivo/2025/real")
+        try? FileManager.default.createSymbolicLink(atPath: fixture.home + "/Projetos/acme/atalho",
+                                                    withDestinationPath: real)
+        // O Claude Code grava a conversa pela pasta de verdade, não pelo link por onde se entrou.
+        used(2, in: real)
+        let controller = fixture.started()
+        let menu = controller.projectMenu()
+        XCTAssertEqual(Array(outline(menu).prefix(3)), ["Mais usados", "acme › Atalho", "-"])
+        XCTAssertEqual(item(menu, "acme › Atalho")?.representedObject as? String, fixture.home + "/Projetos/acme/atalho",
+                       "abre pelo mesmo caminho da linha da empresa")
+    }
+
+    func testSuggestionsStopAtFive() {
+        for (index, name) in ["a", "b", "c", "d", "e", "f"].enumerated() {
+            used(index + 1, in: repository("Projetos/acme/" + name))
+        }
+        let controller = fixture.started()
+        XCTAssertEqual(ProjectUsage.maxSuggestions, 5)
+        XCTAssertEqual(Array(outline(controller.projectMenu()).prefix(7)), [
+            "Mais usados", "acme › F", "acme › E", "acme › D", "acme › C", "acme › B", "-",
+        ])
+    }
+
+    func testSuggestionsComeFromTheConfigFolderOfTheAccount() {
+        let api = repository("Projetos/acme/api")
+        let site = repository("Projetos/beta/site")
+        used(3, in: api)
+        used(1, in: site, configDir: "outra-conta")
+        var environment = fixture.environment
+        environment["CLAUDE_CONFIG_DIR"] = fixture.home + "/outra-conta"
+        let controller = fixture.started(environment: environment)
+        XCTAssertEqual(Array(outline(controller.projectMenu()).prefix(3)), ["Mais usados", "beta › Site", "-"])
+    }
+
     // MARK: apelidos
 
     func testNicknameRenamesTheProjectOfEveryAgentInTheRepository() {
