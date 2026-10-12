@@ -66,7 +66,7 @@ final class MainWindowControllerTests: XCTestCase {
         controller.start(launch: fixture.launch(), options: options)
         XCTAssertEqual(controller.defaultDirectory, project)
         XCTAssertEqual(controller.panes[0].directory, project)
-        XCTAssertEqual(controller.topBar.folderButton.title, "DIR ~/Projetos/acme/app")
+        XCTAssertEqual(controller.topBar.projectButton.title, "PROJETO acme/app")
         XCTAssertEqual(savedConfig().cwd, project)
     }
 
@@ -320,7 +320,7 @@ final class MainWindowControllerTests: XCTestCase {
         controller.setDefaultDirectory(project)
         controller.addAgents(1)
         XCTAssertEqual(controller.panes.map(\.directory), [fixture.home, project])
-        XCTAssertEqual(controller.topBar.folderButton.title, "DIR ~/Projetos/beta")
+        XCTAssertEqual(controller.topBar.projectButton.title, "PROJETO Projetos/beta")
     }
 
     func testFontScaleIsClampedAndReachesEveryTerminal() {
@@ -761,6 +761,150 @@ final class MainWindowControllerTests: XCTestCase {
         XCTAssertTrue(RenderedImage(first, width: 660, height: 450).isColor(Theme.dark.yellow, atX: 1, y: 1))
     }
 
+    // MARK: projetos
+
+    /// O menu PROJETO como texto: `>` marca um submenu, com os itens de dentro recuados.
+    private func outline(_ menu: NSMenu, indent: String = "") -> [String] {
+        menu.items.flatMap { item -> [String] in
+            if item.isSeparatorItem { return [indent + "-"] }
+            guard let submenu = item.submenu else { return [indent + item.title] }
+            return [indent + item.title + " >"] + outline(submenu, indent: indent + "  ")
+        }
+    }
+
+    /// Item achado pelos títulos, um por nível do menu.
+    private func item(_ menu: NSMenu, _ titles: String...) -> NSMenuItem? {
+        var current: NSMenu? = menu
+        var found: NSMenuItem?
+        for title in titles {
+            found = current?.items.first { $0.title == title }
+            current = found?.submenu
+        }
+        return found
+    }
+
+    private func choose(_ item: NSMenuItem?, file: StaticString = #filePath, line: UInt = #line) {
+        guard let item, let action = item.action else {
+            return XCTFail("item fora do menu ou sem ação", file: file, line: line)
+        }
+        XCTAssertTrue(NSApp.sendAction(action, to: item.target, from: item), "ninguém atendeu", file: file, line: line)
+    }
+
+    func testProjectMenuListsCompaniesAndTheirProjects() {
+        fixture.temp.makeDirectory("Projetos/acme/api")
+        fixture.temp.makeDirectory("Projetos/acme/clientes/loja/.git")
+        fixture.temp.makeDirectory("Projetos/beta")
+        let controller = fixture.started()
+        let menu = controller.projectMenu()
+        XCTAssertEqual(outline(menu), [
+            "GLOBAL", "-",
+            "acme >", "  ~/Projetos/acme", "  -", "  api",
+            "  clientes >", "    ~/Projetos/acme/clientes", "    -", "    loja",
+            "beta",
+            "-", "Outra pasta…",
+        ], "empresa sem projeto dentro abre direto, sem submenu")
+        XCTAssertEqual(item(menu, "acme", "api")?.toolTip, "~/Projetos/acme/api")
+        XCTAssertEqual(item(menu, "GLOBAL")?.toolTip, "~")
+    }
+
+    func testProjectMenuWithoutCompaniesStillOffersGlobalAndAnotherFolder() {
+        let controller = fixture.started()
+        XCTAssertEqual(outline(controller.projectMenu()), ["GLOBAL", "-", "Outra pasta…"])
+    }
+
+    func testProjectMenuShowsEachFolderOfADeclaredCompany() {
+        fixture.temp.makeDirectory("Projetos/acme/api")
+        fixture.temp.makeDirectory("trabalho/legado/antigo")
+        fixture.temp.write(".config/clark/companies.json", """
+        {"companies": [{"name": "ACME", "paths": ["~/Projetos/acme", "~/trabalho/legado"]}]}
+        """)
+        let controller = fixture.started()
+        XCTAssertEqual(outline(controller.projectMenu()), [
+            "GLOBAL", "-",
+            "ACME >", "  ~/Projetos/acme", "  ~/trabalho/legado", "  -", "  antigo", "  api",
+            "-", "Outra pasta…",
+        ])
+    }
+
+    func testChoosingAProjectOpensAnAgentThere() {
+        let api = fixture.temp.makeDirectory("Projetos/acme/api")
+        let controller = fixture.started(agents: 1)
+        choose(item(controller.projectMenu(), "acme", "api"))
+        XCTAssertEqual(controller.panes.map(\.directory), [fixture.home, api])
+        XCTAssertEqual(controller.panes[1].company.name, "acme")
+        XCTAssertTrue(controller.mainPane === controller.panes[1], "o agente do projeto vira o principal")
+        XCTAssertEqual(controller.topBar.projectButton.title, "PROJETO acme/api")
+        XCTAssertEqual(savedConfig().cwd, api)
+
+        controller.newAgent(nil)
+        XCTAssertEqual(controller.panes.map(\.directory), [fixture.home, api, api], "⌘N repete o último projeto")
+    }
+
+    func testCompanyFolderAndRepositoryInsideAFolderCanBeChosen() {
+        let loja = fixture.temp.makeDirectory("Projetos/acme/clientes/loja")
+        fixture.temp.makeDirectory("Projetos/acme/clientes/loja/.git")
+        let controller = fixture.started()
+        let menu = controller.projectMenu()
+        choose(item(menu, "acme", "~/Projetos/acme"))
+        choose(item(menu, "acme", "clientes", "~/Projetos/acme/clientes"))
+        choose(item(menu, "acme", "clientes", "loja"))
+        XCTAssertEqual(controller.panes.map(\.directory),
+                       [fixture.home + "/Projetos/acme", fixture.home + "/Projetos/acme/clientes", loja])
+        XCTAssertEqual(Set(controller.panes.map(\.company.name)), ["acme"])
+        XCTAssertEqual(controller.topBar.projectButton.title, "PROJETO clientes/loja")
+    }
+
+    func testGlobalOpensAnAgentAtHomeOutsideAnyCompany() {
+        let api = fixture.temp.makeDirectory("Projetos/acme/api")
+        let controller = fixture.started()
+        controller.setDefaultDirectory(api)
+        choose(item(controller.projectMenu(), "GLOBAL"))
+        XCTAssertEqual(controller.panes.map(\.directory), [fixture.home])
+        XCTAssertEqual(controller.panes[0].company.name, CompanyResolver.fallbackName)
+        XCTAssertEqual(controller.topBar.projectButton.title, "PROJETO GLOBAL")
+        XCTAssertEqual(savedConfig().cwd, fixture.home)
+    }
+
+    func testProjectMenuFollowsTheDisk() {
+        fixture.temp.makeDirectory("Projetos/acme/api")
+        let controller = fixture.started()
+        XCTAssertNil(item(controller.projectMenu(), "acme", "novo"))
+        fixture.temp.makeDirectory("Projetos/acme/novo")
+        XCTAssertNotNil(item(controller.projectMenu(), "acme", "novo"), "a lista é lida a cada abertura do menu")
+    }
+
+    func testProjectThatVanishedBeforeTheClickWarnsAndOpensNothing() throws {
+        let api = fixture.temp.makeDirectory("Projetos/acme/api")
+        let controller = fixture.started()
+        let entry = item(controller.projectMenu(), "acme", "api")
+        try FileManager.default.removeItem(atPath: api)
+        choose(entry)
+        XCTAssertTrue(controller.panes.isEmpty)
+        XCTAssertEqual(controller.defaultDirectory, fixture.home)
+        XCTAssertEqual(controller.warnings.messages.last, "pasta nao encontrada: valendo a anterior")
+    }
+
+    func testOpeningAProjectBeforeTheStartDoesNothing() {
+        let api = fixture.temp.makeDirectory("Projetos/acme/api")
+        let controller = fixture.controller()
+        XCTAssertEqual(outline(controller.projectMenu()), ["GLOBAL", "-", "Outra pasta…"],
+                       "sem o ambiente do shell ainda não há empresas para listar")
+        controller.openAgent(in: api)
+        XCTAssertTrue(controller.panes.isEmpty)
+        XCTAssertEqual(controller.defaultDirectory, fixture.home)
+    }
+
+    func testProjectChosenAtTheAgentLimitStillBecomesTheNextOne() {
+        let api = fixture.temp.makeDirectory("Projetos/acme/api")
+        let controller = fixture.started(agents: ClarkConfig.maxAgents)
+        choose(item(controller.projectMenu(), "acme", "api"))
+        XCTAssertEqual(controller.panes.count, ClarkConfig.maxAgents)
+        XCTAssertEqual(controller.defaultDirectory, api)
+        controller.close(controller.panes[0])
+        controller.newAgent(nil)
+        XCTAssertEqual(controller.panes.last?.directory, api)
+    }
+
     // MARK: menu
 
     func testMenuItemsFollowTheAgents() {
@@ -769,11 +913,15 @@ final class MainWindowControllerTests: XCTestCase {
             controller.validateMenuItem(NSMenuItem(title: "", action: action, keyEquivalent: ""))
         }
         XCTAssertFalse(enabled(#selector(MainWindowController.newAgent(_:))), "antes do ambiente do shell")
-        XCTAssertFalse(enabled(#selector(MainWindowController.chooseFolder(_:))))
+        let project = [#selector(MainWindowController.chooseProject(_:)),
+                       #selector(MainWindowController.openProject(_:)),
+                       #selector(MainWindowController.chooseFolder(_:))]
+        for action in project { XCTAssertFalse(enabled(action), "\(action) antes do ambiente do shell") }
 
         var options = CLIOptions()
         controller.start(launch: fixture.launch(), options: options)
         XCTAssertTrue(enabled(#selector(MainWindowController.newAgent(_:))))
+        for action in project { XCTAssertTrue(enabled(action), "\(action)") }
         XCTAssertFalse(enabled(#selector(MainWindowController.closeAllAgents(_:))))
         XCTAssertFalse(enabled(#selector(MainWindowController.toggleZoom(_:))))
         XCTAssertFalse(enabled(#selector(MainWindowController.nextAgent(_:))))
@@ -807,7 +955,7 @@ final class MainWindowControllerTests: XCTestCase {
         XCTAssertFalse(shortcuts.contains("t"), "⌘T é da fila de tarefas, que chega no M2")
 
         // Toda ação do CLARK no menu precisa existir no controller: seletor errado vira item morto, sem erro.
-        let expected = ["newAgent:", "chooseFolder:", "closeAgent:", "closeAllAgents:", "toggleLayout:", "toggleZoom:",
+        let expected = ["newAgent:", "chooseProject:", "closeAgent:", "closeAllAgents:", "toggleLayout:", "toggleZoom:",
                         "increaseFont:", "decreaseFont:", "resetFont:", "previousAgent:", "nextAgent:",
                         "renameAgent:", "selectAgentByNumber:"]
         let actions = Set(leaves.compactMap(\.action).map(NSStringFromSelector))

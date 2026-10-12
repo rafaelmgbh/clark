@@ -20,42 +20,46 @@ struct AgentStats: Equatable {
     }
 }
 
-/// Barra superior: logo, contagens e os botões de pasta, layout e novo agente.
+/// Barra superior: logo, contagens e os botões de projeto, layout e novo agente.
 final class TopBarView: PixelView {
     static let height = 49
     private static let contentHeight = 46
 
     var stats = AgentStats() { didSet { if stats != oldValue { needsDisplay = true } } }
-    let folderButton = PixelButton(title: "DIR ~", toolTip: "Pasta onde os novos agentes abrem (⌘D)")
+    let projectButton = PixelButton(title: "PROJETO GLOBAL", toolTip: "Abrir agente num projeto (⌘D)")
     let layoutButton = PixelButton(title: "FOCO", toolTip: "Alternar layout foco / grade (⌘L)")
     let addButton = PixelButton(title: "+ AGENT", style: .primary, toolTip: "Novo agente (⌘N)")
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        [folderButton, layoutButton, addButton].forEach(addSubview)
+        [projectButton, layoutButton, addButton].forEach(addSubview)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) não é usado") }
 
     override var theme: Theme {
-        didSet { [folderButton, layoutButton, addButton].forEach { $0.theme = theme } }
+        didSet { [projectButton, layoutButton, addButton].forEach { $0.theme = theme } }
     }
 
-    /// `DIR ~/pasta`, com reticências no começo quando passa de 28 caracteres.
-    static func folderTitle(shortPath: String) -> String {
-        shortPath.count > 28 ? "DIR …" + shortPath.suffix(27) : "DIR " + shortPath
+    /// `PROJETO acme/app`: as duas últimas pastas, com reticências no começo quando passam de 28 caracteres.
+    /// A home é o `GLOBAL`, fora de projeto.
+    static func projectTitle(shortPath: String) -> String {
+        if shortPath == "~" { return "PROJETO GLOBAL" }
+        let folders = shortPath.split(separator: "/")
+        let name = folders.count > 2 ? folders.suffix(2).joined(separator: "/") : shortPath
+        return name.count > 28 ? "PROJETO …" + name.suffix(27) : "PROJETO " + name
     }
 
     private var buttonsLeft: Int {
-        Int(bounds.width) - 10 - [folderButton, layoutButton, addButton].map(\.fittingWidth).reduce(0, +) - 20
+        Int(bounds.width) - 10 - [projectButton, layoutButton, addButton].map(\.fittingWidth).reduce(0, +) - 20
     }
 
     override func layout() {
         super.layout()
         var x = buttonsLeft
         let y = (Self.contentHeight - PixelButton.barHeight) / 2
-        for button in [folderButton, layoutButton, addButton] {
+        for button in [projectButton, layoutButton, addButton] {
             button.frame = NSRect(x: x, y: y, width: button.fittingWidth, height: PixelButton.barHeight)
             x += button.fittingWidth + 10
         }

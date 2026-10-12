@@ -14,7 +14,7 @@ enum MainMenu {
         ]))
         main.addItem(submenu("Arquivo", [
             item("Novo agente", #selector(MainWindowController.newAgent(_:)), "n"),
-            item("Trocar pasta…", #selector(MainWindowController.chooseFolder(_:)), "d"),
+            item("Abrir projeto…", #selector(MainWindowController.chooseProject(_:)), "d"),
             .separator(),
             item("Fechar agente", #selector(MainWindowController.closeAgent(_:)), "w"),
             item("Fechar todos…", #selector(MainWindowController.closeAllAgents(_:)), ""),

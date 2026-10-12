@@ -20,6 +20,11 @@ struct AgentLaunch {
     func company(forDirectory directory: String) -> Company {
         resolver.resolve(canonicalPath: PathTools.canonical(usableDirectory(directory), base: home, home: home))
     }
+
+    /// Empresas e projetos que existem no disco agora, para o menu PROJETO.
+    func projectGroups() -> [ProjectGroup] {
+        resolver.projectGroups { PathTools.canonical($0, base: home, home: home) }
+    }
 }
 
 protocol AgentPaneDelegate: AnyObject {

@@ -13,7 +13,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     private(set) var focusedPane: AgentPaneView?
     private(set) var zoomedPane: AgentPaneView?
     private(set) var layoutMode: String
-    /// Pasta em que os novos agentes abrem.
+    /// Pasta do último projeto escolhido: é onde o ⌘N e o + AGENT abrem.
     private(set) var defaultDirectory: String
     private(set) var fontScale: Double
     private(set) var launch: AgentLaunch?
@@ -91,7 +91,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         window.contentView = root
         for view in [topBar, warnings, sidebar, emptyView] as [PixelView] { view.theme = theme }
         [stage, emptyView, sidebar, warnings, topBar].forEach(root.addSubview)
-        topBar.folderButton.onClick = { [weak self] in self?.chooseFolder(nil) }
+        topBar.projectButton.onClick = { [weak self] in self?.chooseProject(nil) }
         topBar.layoutButton.onClick = { [weak self] in self?.toggleLayout(nil) }
         topBar.addButton.onClick = { [weak self] in self?.addAgents(1) }
         sidebar.closeAllButton.onClick = { [weak self] in self?.closeAllAgents(nil) }
@@ -281,6 +281,62 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         persist()
     }
 
+    // MARK: projetos
+
+    /// Menu do botão PROJETO, relido do disco a cada abertura: GLOBAL, as empresas e a escolha de outra pasta.
+    func projectMenu() -> NSMenu {
+        let menu = NSMenu(title: "Projeto")
+        menu.addItem(projectItem("GLOBAL", path: home))
+        menu.addItem(.separator())
+        let groups = launch?.projectGroups() ?? []
+        for group in groups {
+            // Empresa de uma pasta só, sem nada dentro, abre direto.
+            if group.projects.isEmpty, group.folders.count == 1 {
+                menu.addItem(projectItem(group.name, path: group.folders[0]))
+            } else {
+                menu.addItem(projectSubmenu(group.name, folders: group.folders, entries: group.projects))
+            }
+        }
+        if !groups.isEmpty { menu.addItem(.separator()) }
+        let other = NSMenuItem(title: "Outra pasta…", action: #selector(chooseFolder(_:)), keyEquivalent: "")
+        other.target = self
+        menu.addItem(other)
+        return menu
+    }
+
+    private func projectItem(_ title: String, path: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: #selector(openProject(_:)), keyEquivalent: "")
+        item.target = self
+        item.representedObject = path
+        item.toolTip = PathTools.short(path, home: home)
+        return item
+    }
+
+    /// Submenu de uma empresa ou de uma pasta de repositórios: as próprias pastas em cima, o que há dentro embaixo.
+    private func projectSubmenu(_ title: String, folders: [String], entries: [ProjectEntry]) -> NSMenuItem {
+        let submenu = NSMenu(title: title)
+        for folder in folders { submenu.addItem(projectItem(PathTools.short(folder, home: home), path: folder)) }
+        if !entries.isEmpty { submenu.addItem(.separator()) }
+        for entry in entries {
+            submenu.addItem(entry.children.isEmpty ? projectItem(entry.name, path: entry.path)
+                : projectSubmenu(entry.name, folders: [entry.path], entries: entry.children))
+        }
+        let holder = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        holder.submenu = submenu
+        return holder
+    }
+
+    /// Abre um agente na pasta, que passa a ser a do ⌘N e do + AGENT.
+    func openAgent(in directory: String) {
+        guard launch != nil else { return }
+        guard PathTools.isDirectory(directory) else {
+            warnings.add("pasta nao encontrada: valendo a anterior")
+            return
+        }
+        setDefaultDirectory(directory)
+        addAgents(1)
+    }
+
     /// Agente sobre o qual os atalhos agem.
     var currentPane: AgentPaneView? {
         if let zoomedPane { return zoomedPane }
@@ -407,7 +463,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     private func updateButtonTitles() {
-        topBar.folderButton.title = TopBarView.folderTitle(shortPath: PathTools.short(defaultDirectory, home: home))
+        topBar.projectButton.title = TopBarView.projectTitle(shortPath: PathTools.short(defaultDirectory, home: home))
         topBar.layoutButton.title = layoutMode == "focus" ? "FOCO" : "GRADE"
         topBar.needsLayout = true
         topBar.needsDisplay = true
@@ -526,6 +582,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         choices[choice].panes.forEach(close)
     }
 
+    @objc func chooseProject(_ sender: Any?) {
+        guard launch != nil else { return }
+        let button = topBar.projectButton
+        projectMenu().popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)
+    }
+
+    @objc func openProject(_ sender: NSMenuItem) {
+        if let path = sender.representedObject as? String { openAgent(in: path) }
+    }
+
+    /// "Outra pasta…" do menu PROJETO: qualquer pasta do disco.
     @objc func chooseFolder(_ sender: Any?) {
         guard let window, launch != nil else { return }
         let panel = NSOpenPanel()
@@ -534,9 +601,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         panel.allowsMultipleSelection = false
         panel.directoryURL = URL(fileURLWithPath: defaultDirectory)
         panel.prompt = "Escolher"
-        panel.message = "Pasta onde os novos agentes abrem"
+        panel.message = "Pasta onde o agente abre"
         panel.beginSheetModal(for: window) { [weak self] response in
-            if response == .OK, let path = panel.url?.path { self?.setDefaultDirectory(path) }
+            if response == .OK, let path = panel.url?.path { self?.openAgent(in: path) }
         }
     }
 
@@ -580,7 +647,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         switch menuItem.action {
         case #selector(newAgent(_:)):
             return launch != nil && panes.count < ClarkConfig.maxAgents
-        case #selector(chooseFolder(_:)):
+        case #selector(chooseProject(_:)), #selector(openProject(_:)), #selector(chooseFolder(_:)):
             return launch != nil
         case #selector(closeAllAgents(_:)), #selector(toggleZoom(_:)), #selector(renameAgent(_:)):
             return !panes.isEmpty

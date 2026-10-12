@@ -264,7 +264,7 @@ final class PixelViewsTests: XCTestCase {
         let bar = TopBarView()
         bar.stats = AgentStats(states: [.working, .working, .done, .exited])
         let image = RenderedImage(bar, width: 620, height: TopBarView.height)
-        let buttons = Int(bar.folderButton.frame.minX)
+        let buttons = Int(bar.projectButton.frame.minX)
         XCTAssertGreaterThan(buttons, 0)
         for color in [theme.ink, theme.green, theme.yellow, theme.red] {
             XCTAssertEqual(image.count(color, x: buttons - 10), 0)
@@ -281,13 +281,21 @@ final class PixelViewsTests: XCTestCase {
         XCTAssertEqual(AgentStats(states: []), AgentStats())
     }
 
-    func testFolderTitleKeepsTheEndOfALongPath() {
-        XCTAssertEqual(TopBarView.folderTitle(shortPath: "~/x"), "DIR ~/x")
-        let exact = "~/" + String(repeating: "a", count: 26)
-        XCTAssertEqual(TopBarView.folderTitle(shortPath: exact), "DIR " + exact)
-        let long = "~/Projetos/" + String(repeating: "b", count: 30) + "/fim"
-        let title = TopBarView.folderTitle(shortPath: long)
-        XCTAssertEqual(title, "DIR …" + long.suffix(27))
+    func testProjectTitleNamesTheLastTwoFolders() {
+        XCTAssertEqual(TopBarView.projectTitle(shortPath: "~"), "PROJETO GLOBAL")
+        XCTAssertEqual(TopBarView.projectTitle(shortPath: "~/x"), "PROJETO ~/x")
+        XCTAssertEqual(TopBarView.projectTitle(shortPath: "~/Projetos/acme/app"), "PROJETO acme/app")
+        XCTAssertEqual(TopBarView.projectTitle(shortPath: "/opt/x"), "PROJETO /opt/x")
+        XCTAssertEqual(TopBarView.projectTitle(shortPath: "/opt/acme/app"), "PROJETO acme/app")
+        XCTAssertEqual(TopBarView.projectTitle(shortPath: "/"), "PROJETO /")
+    }
+
+    func testProjectTitleKeepsTheEndOfALongName() {
+        let exact = String(repeating: "a", count: 14) + "/" + String(repeating: "b", count: 13)
+        XCTAssertEqual(TopBarView.projectTitle(shortPath: "~/Projetos/" + exact), "PROJETO " + exact)
+        let long = String(repeating: "c", count: 30) + "/fim"
+        let title = TopBarView.projectTitle(shortPath: "~/Projetos/" + long)
+        XCTAssertEqual(title, "PROJETO …" + long.suffix(27))
         XCTAssertTrue(title.hasSuffix("/fim"))
     }
 

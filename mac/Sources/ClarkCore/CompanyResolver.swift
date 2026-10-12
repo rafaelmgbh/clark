@@ -99,6 +99,10 @@ public struct CompanyResolver: Sendable {
         self.warnings = warnings
     }
 
+    /// As `roots` e os `paths` declarados, como caminhos. Servem ao catálogo de projetos.
+    var rootPaths: [String] { roots.map { "/" + $0.joined(separator: "/") } }
+    var declaredPaths: [String] { rules.map { "/" + $0.prefix.joined(separator: "/") } }
+
     /// `canonicalPath` precisa ter passado pela mesma `canonicalize` do init.
     public func resolve(canonicalPath: String) -> Company {
         let components = PathTools.components(canonicalPath)
