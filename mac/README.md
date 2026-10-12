@@ -191,6 +191,8 @@ O `swiftpm.sh` chama o `swift` com `--build-system native` quando o Metal Toolch
 não está instalado. O aviso de que esse sistema de build está obsoleto é esperado.
 
 O desenho do projeto está em [`docs/specs/2026-10-11-clark-mac-design.md`](docs/specs/2026-10-11-clark-mac-design.md).
+O que os testes não cobrem (tela, teclado, o `claude` de verdade) tem roteiro manual em
+[`docs/testes/2026-10-12-roteiro-manual.md`](docs/testes/2026-10-12-roteiro-manual.md).
 
 ## Limitações do M1
 
