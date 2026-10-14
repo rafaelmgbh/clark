@@ -67,7 +67,14 @@ nome do agente é cortado, pelo começo: o fim é o que distingue `AGENT 1` de `
 lista lateral traz o nome, o projeto numa linha própria, na cor da empresa, e a empresa em cinza.
 
 O CLARK começa no `GLOBAL`: um agente na home, para o que não é de projeto nenhum. O ⌘N e o
-`+ AGENT` também abrem no `GLOBAL`. Para trabalhar num projeto, use o botão `PROJETO` da barra (⌘D):
+`+ AGENT` também abrem no `GLOBAL`. Para trabalhar num projeto, use o botão `PROJETO` da barra (⌘D).
+
+O menu é desenhado pelo próprio CLARK, com a cara do resto do app, e abre em cascata: parar o cursor
+numa linha com `>` abre o submenu ao lado, sem clique. Pelo teclado, ↑ e ↓ trocam de linha, → ou
+Enter entram no submenu, ← volta um nível, Enter escolhe e Esc fecha. Clicar fora, trocar de app ou
+apertar ⌘D de novo fecha sem escolher nada. Enquanto o menu está aberto, o que você digita não chega
+ao terminal. O submenu que não cabe à direita abre à esquerda, e a lista mais alta que a tela rola,
+com uma seta no canto de onde ainda há linhas. De cima para baixo, o menu traz:
 
 - `Mais usados`, no topo, traz até cinco pastas em que o Claude Code mais foi usado nos últimos 30
   dias: a mais usada primeiro e, no empate, a usada por último. A conta sai das conversas que o
@@ -76,7 +83,8 @@ O CLARK começa no `GLOBAL`: um agente na home, para o que não é de projeto ne
   com a empresa na frente (`Acme › Api`). O `GLOBAL` não entra na conta, e sem conversa nenhuma o
   bloco não aparece.
 - `GLOBAL` abre um agente na home.
-- Cada empresa é um submenu com os projetos dela. Escolher um abre um agente na pasta do projeto.
+- Cada empresa vem em maiúsculas, com um quadradinho na cor dela, e é um submenu com os projetos
+  dela. Escolher um abre um agente na pasta do projeto.
 - Projeto é a pasta com repositório git ou com instruções para agente (`CLAUDE.md`, `AGENTS.md`,
   `.claude`), até quatro níveis abaixo da pasta da empresa. Os do primeiro nível vêm soltos. Os mais
   fundos ficam num submenu com o nome da pasta que os guarda (`Vendas ▸`). Pasta que só organiza

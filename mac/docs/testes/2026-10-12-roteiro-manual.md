@@ -15,6 +15,7 @@ usa a tela, o teclado e a conta do `claude`. Nada aqui é automatizado.
 | Aviso de controle remoto (commit seguinte ao `9bdf093`) | 515 testes verdes, 26 mutações mortas, imagem renderizada nos testes, campo do arquivo de sessão conferido em sessões reais | nunca |
 | Cabeçalho em etiquetas, `Mais usados` no menu e links sublinhados (os três commits seguintes ao do aviso de controle remoto) | 580 testes verdes, 102 mutações mortas (30 do cabeçalho, 24 do menu, 48 dos links), imagens renderizadas nos testes, custo da leitura dos links medido no build otimizado | nunca |
 | Agente em segundo plano não dispara o aviso de agente pronto (correção do aviso falso) | 592 testes verdes, o aviso falso reproduzido em teste antes da correção, a correção ingênua (que atrasaria o aviso de verdade) morta por dois testes, `status` do arquivo de sessão conferido numa sessão real com agentes em segundo plano | nunca |
+| Menu `PROJETO` em cascata desenhado pelo app, com as empresas em maiúsculas e na cor delas (ainda sem commit) | 656 testes verdes, 16 de 17 mutações mortas (a que sobra é o repasse do tema ao menu: só existe o `dark`), imagem do menu renderizada com as pastas reais | nunca: o cursor, o teclado e o clique fora só foram exercitados nos testes |
 | Ícone do dragão (`7fa1ec6`) | coberto pelos testes | nunca |
 | Núcleo do M1 (`80cb7e8`) | coberto pelos testes | em uso, mas o roteiro da Task 15 do plano nunca foi rodado inteiro |
 | `Tests/packaging.sh` depois do diff | não rodou: exige o CLARK fechado | não se aplica |
@@ -204,6 +205,34 @@ cd /tmp/clark-diff && git checkout -q -- b.txt && rm -f longo.txt bin.dat teste.
 - [ ] **B2. Clique no botão `PROJETO`.** Clique no botão da barra, sem usar o ⌘D. Esperado: o menu
   abre logo abaixo dele, sem demora, com `Mais usados` no topo, `GLOBAL`, as empresas e
   `Outra pasta…`. O título do botão é sempre `PROJETO`.
+
+- [ ] **B2b. Cara do menu.** Com o menu aberto, olhe o desenho. Esperado: fundo escuro com moldura e
+  sombra dura, a mesma letra dos botões; `MAIS USADOS` em letra pequena e cinza; as empresas em
+  maiúsculas, cada uma com um quadradinho na cor dela (a mesma da etiqueta no cabeçalho dos agentes)
+  e um `>` na ponta; a linha sob o cursor fica mais clara, com uma barra laranja à esquerda. Nada do
+  menu cinza do macOS.
+
+- [ ] **B2c. Cascata com o cursor.** Pare o cursor numa empresa. Esperado: o submenu abre ao lado,
+  sem clique, com a primeira linha na altura da empresa. Vá na diagonal até uma linha lá embaixo do
+  submenu, passando por cima de outras empresas: o submenu não troca no caminho. Agora pare numa
+  outra empresa: o submenu troca depois de um instante. Dentro do submenu, pare numa linha com `>`
+  (`Worktrees`, `Outras pastas` ou uma pasta com projetos): abre o terceiro nível.
+
+- [ ] **B2d. Teclado.** Abra o menu com ⌘D e não toque no mouse. Esperado: ↓ e ↑ andam pelas linhas,
+  pulando o título e os traços, e dão a volta no fim; → ou Enter numa empresa entra no submenu, com
+  a primeira linha destacada; ← volta para a empresa; Enter num projeto abre o agente e fecha o
+  menu; Esc fecha tudo. Digite letras com o menu aberto: nada chega ao terminal.
+
+- [ ] **B2e. Fechar sem escolher.** Abra o menu e clique no terminal. Esperado: o menu fecha e o
+  clique não seleciona texto nem troca de agente. Abra de novo e clique no próprio botão `PROJETO`:
+  fecha, sem reabrir. Abra e aperte ⌘D: fecha. Abra e troque de app com ⌘Tab: ao voltar, o menu não
+  está mais lá. Em todos os casos o foco continua no terminal: dá para digitar em seguida.
+
+- [ ] **B2f. Bordas da tela.** Arraste a janela do CLARK até o botão `PROJETO` ficar perto da borda
+  direita da tela e abra uma empresa. Esperado: o submenu abre à esquerda do menu, inteiro na tela.
+  Com a janela baixa na tela, abra a empresa com mais projetos: o submenu sobe para caber e, se ainda
+  assim não couber, rola com a roda do mouse ou com ↓, mostrando uma seta laranja no canto de onde
+  há mais linhas.
 
 - [ ] **B2a. Mais usados.** No topo do menu, confira o bloco `Mais usados`. Esperado: até cinco
   linhas no formato `Empresa › Projeto`, e as primeiras são as pastas em que você mais usou o

@@ -32,6 +32,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     var diffAutosaveName: String?
     /// Põe uma janela auxiliar na tela. Trocado nos testes, que não abrem janela.
     var present: (NSWindowController) -> Void = { $0.showWindow(nil) }
+    /// Quem mostra o menu do botão PROJETO.
+    let pixelMenu = PixelMenu()
 
     private var config: ClarkConfig
     private let store: ConfigStore
@@ -199,6 +201,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         activationObserver = nil
         diffPanel?.close()
         diffPanel = nil
+        pixelMenu.close()
         panes.forEach { $0.shutdown() }
     }
 
@@ -453,12 +456,21 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         return holder
     }
 
-    /// Linha de uma empresa. O submenu traz, de cima para baixo: os projetos apelidados, os do
+    /// Linha de uma empresa, em maiúsculas e com o quadradinho da cor dela, como a etiqueta no
+    /// cabeçalho do agente. O submenu traz, de cima para baixo: os projetos apelidados, os do
     /// primeiro nível, um grupo por pasta que guarda projetos mais fundos, as worktrees, as pastas
     /// que não são projeto e a pasta da própria empresa.
     private func companyItem(_ group: ProjectGroup) -> NSMenuItem {
+        let item = companyEntries(group, title: group.name.uppercased())
+        if let launch, let folder = group.folders.first {
+            item.image = PixelMenuView.swatch(launch.company(forDirectory: folder).color)
+        }
+        return item
+    }
+
+    private func companyEntries(_ group: ProjectGroup, title: String) -> NSMenuItem {
         // Empresa de uma pasta só, sem nada dentro para escolher, abre direto.
-        if group.isBare, group.folders.count == 1 { return projectItem(group.name, path: group.folders[0]) }
+        if group.isBare, group.folders.count == 1 { return projectItem(title, path: group.folders[0]) }
         var folders: [NSMenuItem] = []
         if !group.worktrees.isEmpty {
             folders.append(Self.submenuItem(Self.worktreesTitle, blocks: [group.worktrees.map(projectItem)]))
@@ -471,7 +483,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         } else {
             folders += group.folders.map { projectItem(PathTools.short($0, home: home), path: $0) }
         }
-        return Self.submenuItem(group.name, blocks: [
+        return Self.submenuItem(title, blocks: [
             group.nicknamed.map(projectItem),
             group.projects.map(projectItem) + group.sections.map(sectionItem),
             folders,
@@ -772,8 +784,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     @objc func chooseProject(_ sender: Any?) {
         guard launch != nil else { return }
-        let button = topBar.projectButton
-        projectMenu().popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)
+        pixelMenu.theme = theme
+        pixelMenu.show(projectMenu(), below: topBar.projectButton)
     }
 
     @objc func openProject(_ sender: NSMenuItem) {
