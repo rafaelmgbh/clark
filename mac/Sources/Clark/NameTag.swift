@@ -30,8 +30,7 @@ enum NameTag {
         Pixel.fill(context, x, y, width, height, face)
         Pixel.frame(context, x, y, width, height, thickness: 2, theme.shadow)
         let size = fontSize(compact: compact), padding = padding(compact: compact)
-        let font = Pixel.monoFont(size: size, bold: true)
-        let lineHeight = Int((font.ascender - font.descender + font.leading).rounded(.up))
+        let lineHeight = Pixel.monoLineHeight(size: size, bold: true)
         Pixel.mono(context, text, x + padding, y + (height - lineHeight) / 2, width: width - 2 * padding + 1,
                    size: size, ink(on: face, theme: theme), truncate: truncate, bold: true)
     }

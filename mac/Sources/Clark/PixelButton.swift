@@ -101,8 +101,7 @@ final class PixelButton: PixelView {
     }
 
     private func drawTitle(_ context: CGContext, x: Int, width: Int, height: Int, _ color: RGB) {
-        let font = Pixel.monoFont(size: fontSize, bold: true)
-        let lineHeight = Int((font.ascender - font.descender + font.leading).rounded(.up))
+        let lineHeight = Pixel.monoLineHeight(size: fontSize, bold: true)
         Pixel.mono(context, title, x, (height - lineHeight) / 2, width: width + 1, size: fontSize, color,
                    truncate: .byTruncatingHead, bold: true)
     }
