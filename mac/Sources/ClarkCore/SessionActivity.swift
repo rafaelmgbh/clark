@@ -23,6 +23,9 @@ public struct SessionReport: Equatable, Sendable {
     /// navegador. Enquanto ele dura, o arquivo guarda o nome da sessão remota em `bridgeSessionId`;
     /// ao desligar, o Claude Code grava `null` no lugar.
     public var remoteControl: Bool
+    /// A conversa que o processo segue agora. `/clear` e `/resume` trocam a conversa sem trocar o
+    /// processo. nil: o arquivo não traz um UUID.
+    public var sessionID: String? = nil
 
     /// Teto do que é lido do arquivo, que tem menos de 1 KiB.
     public static let maxBytes = 64 * 1024
@@ -35,22 +38,35 @@ public struct SessionReport: Equatable, Sendable {
     /// de um processo antigo que tinha o mesmo número.
     /// - Parameter since: quando o processo abriu, em segundos desde 1970.
     public static func read(configDir: String, pid: Int32, since: Double) -> SessionReport? {
-        let path = path(configDir: configDir, pid: pid)
+        guard let data = contents(of: path(configDir: configDir, pid: pid), modifiedSince: since) else { return nil }
+        return SessionReport(json: data, pid: pid)
+    }
+
+    /// O conteúdo de um arquivo comum de até `maxBytes`, gravado a partir de `since`. Uma pasta ou um
+    /// pipe no lugar do arquivo não seguram a leitura.
+    static func contents(of path: String, modifiedSince since: Double = 0) -> Data? {
         var info = stat()
         guard stat(path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
         let modified = Double(info.st_mtimespec.tv_sec) + Double(info.st_mtimespec.tv_nsec) / 1_000_000_000
         guard modified >= since, let handle = FileHandle(forReadingAtPath: path) else { return nil }
         defer { try? handle.close() }
         guard let data = try? handle.read(upToCount: maxBytes + 1), data.count <= maxBytes else { return nil }
-        return SessionReport(json: data, pid: pid)
+        return data
+    }
+
+    /// O objeto do arquivo, se ele é da sessão do processo `pid`.
+    static func object(json data: Data, pid: Int32) -> [String: Any]? {
+        guard let session = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              session["pid"] as? Int == Int(pid) else { return nil }
+        return session
     }
 }
 
 extension SessionReport {
     init?(json data: Data, pid: Int32) {
-        guard let session = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              session["pid"] as? Int == Int(pid) else { return nil }
+        guard let session = Self.object(json: data, pid: pid) else { return nil }
         activity = (session["status"] as? String).flatMap(SessionActivity.init(rawValue:))
         remoteControl = (session["bridgeSessionId"] as? String).map { !$0.isEmpty } ?? false
+        sessionID = SessionLocator.normalized(session["sessionId"] as? String)
     }
 }

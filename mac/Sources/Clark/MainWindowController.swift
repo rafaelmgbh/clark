@@ -674,6 +674,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         refreshChrome()
     }
 
+    func paneSessionDidChange(_ pane: AgentPaneView) { persist() }
+
     func paneRequestsDiff(_ pane: AgentPaneView) { presentDiff(of: pane) }
     func paneRequestsDiff(_ pane: AgentPaneView, path: String) { presentDiff(of: pane, path: path) }
     func paneRequestsSelect(_ pane: AgentPaneView) { select(pane) }

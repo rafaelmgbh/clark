@@ -62,6 +62,12 @@ public struct ClaudeCommand: Equatable, Sendable {
         return ClaudeCommand(arguments: arguments, bypassesPermissions: bypassesPermissions(extraArgs))
     }
 
+    /// Reabre no terminal do agente a conversa que segue em segundo plano. O processo dela já tem
+    /// modelo e modo de permissão, herdados do agente: as flags dele só decidem a faixa.
+    public static func attach(jobID: String, extraArgs: [String]) -> ClaudeCommand {
+        ClaudeCommand(arguments: ["attach", jobID], bypassesPermissions: bypassesPermissions(extraArgs))
+    }
+
     public static func hasSessionFlag(_ args: [String]) -> Bool {
         args.contains { argument in
             let flag = argument.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""

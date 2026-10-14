@@ -60,6 +60,8 @@ protocol AgentPaneDelegate: AnyObject {
     func paneNeedsAttention(_ pane: AgentPaneView)
     /// Estado, nome ou prévia mudaram.
     func paneDidChange(_ pane: AgentPaneView)
+    /// O agente passou a seguir outra conversa: é ela que volta ao reabrir.
+    func paneSessionDidChange(_ pane: AgentPaneView)
     func paneRequestsSelect(_ pane: AgentPaneView)
     func paneRequestsZoom(_ pane: AgentPaneView)
     func paneRequestsClose(_ pane: AgentPaneView)
@@ -94,7 +96,9 @@ final class AgentPaneView: PixelView {
     private(set) var project: String
     /// Aberto na home: fora de projeto e de empresa.
     let isGlobal: Bool
-    let sessionID: String
+    /// A conversa que o `claude` do agente segue. Muda com `/clear` e `/resume` e quando a conversa
+    /// vai para segundo plano.
+    private(set) var sessionID: String
     /// Passo de escurecimento da cor da empresa.
     let tone: Int
     let company: Company
@@ -135,6 +139,13 @@ final class AgentPaneView: PixelView {
     private var reportedState = AgentState.boot
     /// Pasta de configuração do Claude deste agente, conhecida a partir do `spawn`.
     private var claudeConfigDir: String?
+    /// O job em segundo plano que o processo do agente mostra, quando ele abriu com `claude attach`.
+    private var attachedJob: String?
+    /// Até quando, depois da saída, o anúncio de conversa mandada para segundo plano é procurado.
+    private var handoffUntil = -Double.infinity
+    private var handoffAt = -Double.infinity
+    /// Por quanto tempo, depois da saída, o job anunciado é esperado.
+    static let handoffWindow = 30.0
     private var digestGeneration = 0
 
     var color: RGB { CompanyResolver.tone(company.color, index: tone) }
@@ -209,13 +220,25 @@ final class AgentPaneView: PixelView {
         removedVariables = environment.removed
         machine.spawned(now: now)
         spawnedAt = Date().timeIntervalSince1970
+        handoffUntil = -.infinity
+        handoffAt = -.infinity
+        attachedJob = nil
         if let claude = launch.claudePath {
             let configDir = SessionLocator.configDir(environment: environment.variables, home: launch.home)
-            let sessionExists = SessionLocator.sessionExists(sessionID, configDir: configDir)
-            let command = ClaudeCommand.build(extraArgs: launch.claudeArgs, sessionID: sessionID,
+            let command: ClaudeCommand
+            // A conversa segue em segundo plano: reabrir com `--resume` abriria uma cópia dela.
+            if !ClaudeCommand.hasSessionFlag(launch.claudeArgs),
+               let background = BackgroundSession.live(configDir: configDir, sessionID: sessionID) {
+                command = ClaudeCommand.attach(jobID: background.jobID, extraArgs: launch.claudeArgs)
+                attachedJob = background.jobID
+                startedNewConversation = false
+            } else {
+                let sessionExists = SessionLocator.sessionExists(sessionID, configDir: configDir)
+                command = ClaudeCommand.build(extraArgs: launch.claudeArgs, sessionID: sessionID,
                                               sessionExists: sessionExists)
+                startedNewConversation = !sessionExists
+            }
             claudeConfigDir = configDir
-            startedNewConversation = !sessionExists
             bypassesPermissions = command.bypassesPermissions
             terminal.startProcess(executable: claude, args: command.arguments, environment: environment.asArray,
                                   currentDirectory: directory)
@@ -282,6 +305,8 @@ final class AgentPaneView: PixelView {
             self.machine.exited()
             // Morto à força, o processo deixa o arquivo de sessão para trás: quem saiu não é remoto.
             self.remoteControl = false
+            self.handoffUntil = self.clock() + Self.handoffWindow
+            self.followHandoff(now: self.clock())
             self.terminal.feed(text: Self.gameOver)
             self.changed()
         }
@@ -307,6 +332,7 @@ final class AgentPaneView: PixelView {
         let before = machine.state, remoteBefore = remoteControl
         // Antes do tique da máquina: com a tela parada, quem decide é o que o Claude Code diz agora.
         refreshSession(now: now)
+        followHandoff(now: now)
         let notify = machine.tick(now: now, watched: delegate?.paneIsWatched(self) ?? false)
         if machine.state != before || remoteControl != remoteBefore { changed() }
         if notify { delegate?.paneNeedsAttention(self) }
@@ -328,6 +354,31 @@ final class AgentPaneView: PixelView {
         machine.backgroundShell(report?.activity == .shell)
         machine.sessionBusy(report?.activity == .busy)
         remoteControl = report?.remoteControl ?? false
+        // Pelo `attach`, o processo do agente só mostra o job: a conversa é a do arquivo do job.
+        if let job = attachedJob {
+            if let background = BackgroundSession.live(configDir: configDir, jobID: job) { adopt(background.sessionID) }
+        } else if let id = report?.sessionID {
+            adopt(id)
+        }
+    }
+
+    /// Depois da saída, procura na tela o anúncio da conversa mandada para segundo plano e passa a
+    /// seguir o job. O processo em segundo plano pode gravar o arquivo dele depois que o `claude` do
+    /// agente sai: a procura se repete uma vez por segundo, por `handoffWindow` segundos.
+    private func followHandoff(now: Double) {
+        guard let configDir = claudeConfigDir, machine.state == .exited, now <= handoffUntil,
+              now - handoffAt >= Self.activityInterval else { return }
+        handoffAt = now
+        guard let job = BackgroundSession.handoff(in: terminal.linesAboveCursor()),
+              let background = BackgroundSession.live(configDir: configDir, jobID: job) else { return }
+        handoffUntil = -.infinity
+        adopt(background.sessionID)
+    }
+
+    private func adopt(_ id: String) {
+        guard id != sessionID else { return }
+        sessionID = id
+        delegate?.paneSessionDidChange(self)
     }
 
     /// O painel ganhou o foco do teclado.

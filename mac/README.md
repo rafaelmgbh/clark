@@ -52,6 +52,13 @@ Ao reabrir, o CLARK restaura os agentes com as mesmas conversas (`claude --resum
 um agente não existe mais, ele abre na home, numa conversa nova. Sem agente para restaurar e sem
 pedido na linha de comando, o CLARK abre um agente no `GLOBAL`.
 
+A conversa guardada é a que o `claude` do agente está seguindo: depois de um `/clear` ou de um
+`/resume`, volta a nova. Conversa mandada para segundo plano segue no processo dela, com outro id; o
+agente passa a guardar esse id e, enquanto o processo vive, reabre com `claude attach <id>` em vez de
+`--resume`, que abriria uma cópia. Isso vale também para o Enter do `GAME OVER`. O CLARK sabe disso
+pelo `<config>/sessions/<pid>.json` e pelo aviso `backgrounded · <id>` que o `claude` escreve ao
+sair, detalhes internos do Claude Code: se eles mudarem, o agente volta à conversa de antes.
+
 Com o CLARK já aberto, `clark` só traz a janela para a frente: as opções são ignoradas.
 
 ### Projetos

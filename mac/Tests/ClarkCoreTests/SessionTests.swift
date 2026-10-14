@@ -95,6 +95,16 @@ final class ClaudeCommandTests: XCTestCase {
         XCTAssertTrue(command.bypassesPermissions)
         XCTAssertEqual(command.arguments, ["--dangerously-skip-permissions", "--session-id", id])
     }
+
+    /// A conversa segue em segundo plano: o agente reabre o processo dela, sem as flags de abrir uma
+    /// sessão. A faixa `SEM PERMISSOES` segue as flags do agente, de quem o processo herdou o modo.
+    func testBackgroundJobIsAttached() {
+        let command = ClaudeCommand.attach(jobID: "a1b2c3d4", extraArgs: ["--dangerously-skip-permissions",
+                                                                          "--model", "opus"])
+        XCTAssertEqual(command.arguments, ["attach", "a1b2c3d4"])
+        XCTAssertTrue(command.bypassesPermissions)
+        XCTAssertFalse(ClaudeCommand.attach(jobID: "a1b2c3d4", extraArgs: []).bypassesPermissions)
+    }
 }
 
 final class ClaudeLocatorTests: XCTestCase {

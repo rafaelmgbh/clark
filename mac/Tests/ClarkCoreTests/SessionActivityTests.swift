@@ -100,6 +100,21 @@ final class SessionActivityTests: XCTestCase {
         XCTAssertEqual(read(), .shell)
     }
 
+    // MARK: conversa
+
+    /// `/clear` e `/resume` trocam a conversa sem trocar o processo: o arquivo diz qual vale agora.
+    func testReadsTheConversationTheProcessIsIn() {
+        session(#"{"pid": 4242, "status": "idle", "sessionId": "0C1D2E3F-4A5B-4C6D-8E7F-9A0B1C2D3E4F"}"#)
+        XCTAssertEqual(report()?.sessionID, "0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f")
+    }
+
+    func testConversationThatIsNotAUUIDIsNoAnswer() {
+        for id in [#""abc""#, "7", "null", #""""#, #"["0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f"]"#] {
+            session(#"{"pid": 4242, "status": "idle", "sessionId": \#(id)}"#)
+            XCTAssertEqual(report(), SessionReport(activity: .idle, remoteControl: false), id)
+        }
+    }
+
     // MARK: controle remoto
 
     func testRemoteControlIsOnWhileTheSessionNamesItsBridge() {
