@@ -85,7 +85,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        controller?.shutdown()
+        // Sem controller, este processo só ativou o CLARK que já estava aberto: nada a atualizar.
+        guard let controller else { return }
+        controller.shutdown()
+        startUpdate()
+    }
+
+    /// Deixa rodando a atualização para o último commit do repo de onde o app veio (ver `SelfUpdate`).
+    private func startUpdate() {
+        let bundle = Bundle.main
+        guard let command = SelfUpdate.command(bundlePath: bundle.bundlePath, info: bundle.infoDictionary ?? [:],
+                                               pid: getpid(), environment: ProcessInfo.processInfo.environment,
+                                               isExecutable: { FileManager.default.isExecutableFile(atPath: $0) })
+        else { return }
+        let logs = home + "/Library/Logs/Clark"
+        try? FileManager.default.createDirectory(atPath: logs, withIntermediateDirectories: true)
+        SelfUpdate.spawnDetached(arguments: command, log: logs + "/update.log")
     }
 }
 

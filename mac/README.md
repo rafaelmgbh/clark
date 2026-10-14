@@ -29,6 +29,25 @@ O `install.sh` não sobrescreve um `clark` que não seja o dele e não instala c
 Para remover, apague `~/Applications/Clark.app` e `~/.local/bin/clark`. As preferências ficam em
 `~/.config/clark/`.
 
+### Atualização automática
+
+Um app compilado de dentro do repo se mantém no último commit dele. O `build.sh` grava no app o
+caminho do repo e a versão de `mac/` compilada. Quando um commit muda `mac/`, o `update.sh`, que vai
+dentro do app, extrai o que está commitado para `~/Library/Caches/io.github.rafaelmgbh.clark/`,
+compila e instala. Isso acontece em dois momentos:
+
+- ao fechar o CLARK, num processo que espera o app sair. A próxima abertura, pelo Dock ou pelo
+  `clark`, já é a nova;
+- no `clark`, antes de abrir, quando o app está fechado.
+
+Vale o `HEAD` do repo local, na branch que estiver nele, sem `git fetch`. Mudanças ainda não
+commitadas e commits que só mexem fora de `mac/` não disparam nada. A primeira compilação leva alguns
+minutos; as seguintes reaproveitam o cache. Se o build falhar, o app instalado fica como está. A saída
+vai para `~/Library/Logs/Clark/update.log`.
+
+Para desligar, defina `CLARK_NO_UPDATE=1`. No terminal, isso vale para o `clark`; para o app aberto
+pelo Dock, use `launchctl setenv CLARK_NO_UPDATE 1`.
+
 O ícone é o dragão do CLARK, desenhado pelo próprio app: o `build.sh` chama
 `Clark --export-icon ARQUIVO --icon-size N` para cada tamanho e monta o `.icns` com o `iconutil`.
 
@@ -287,7 +306,7 @@ ao pedido de leitura (OSC 52). Copiar a partir do agente continua funcionando.
 
 ```bash
 ./swiftpm.sh test       # testes do Swift
-Tests/packaging.sh      # install.sh e atalho, numa HOME temporária
+Tests/packaging.sh      # build.sh, install.sh, atalho e update.sh, numa HOME temporária (alguns minutos)
 ```
 
 O `swiftpm.sh` chama o `swift` com `--build-system native` quando o Metal Toolchain do Xcode

@@ -43,6 +43,25 @@ cp Resources/Info.plist "$app/Contents/Info.plist"
   -c "Set :CFBundleVersion $build" \
   "$app/Contents/Info.plist"
 
+# De onde o app veio, para o update.sh trazê-lo ao último commit: o repo e a árvore de mac/ no HEAD.
+# Um build com mudanças ainda não commitadas grava o HEAD, e o commit delas dispara a atualização.
+# O update.sh passa os dois prontos, porque compila uma cópia extraída do repo.
+source_repo="${CLARK_SOURCE_REPO:-}"
+source_tree="${CLARK_SOURCE_TREE:-}"
+if [ -z "$source_repo" ]; then
+  top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  # Só o repo em que este build.sh está: uma pasta solta pode ficar dentro de outro repo.
+  if [ -n "$top" ] && [ "$top/mac/build.sh" -ef build.sh ] \
+    && source_tree="$(git rev-parse --verify --quiet HEAD:mac)"; then
+    source_repo="$top"
+  fi
+fi
+if [ -n "$source_repo" ] && [ -n "$source_tree" ]; then
+  plutil -replace ClarkSourceRepo -string "$source_repo" "$app/Contents/Info.plist"
+  plutil -replace ClarkSourceTree -string "$source_tree" "$app/Contents/Info.plist"
+fi
+install -m 755 update.sh "$app/Contents/Resources/update.sh"
+
 # O bundle de recursos do SwiftTerm (só o shader do renderizador Metal) fica de fora:
 # o CLARK desenha por CoreGraphics e nunca liga esse renderizador.
 
@@ -51,4 +70,4 @@ cp Resources/Info.plist "$app/Contents/Info.plist"
 codesign --force --sign - "$app"
 codesign --verify --strict "$app"
 
-echo "pronto: $(pwd)/$app (versão $version)"
+echo "pronto: $(pwd)/$app (versão $version${source_tree:+, mac/ ${source_tree:0:7}})"

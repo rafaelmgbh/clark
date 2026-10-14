@@ -18,7 +18,8 @@ usa a tela, o teclado e a conta do `claude`. Nada aqui é automatizado.
 | Menu `PROJETO` em cascata desenhado pelo app, com as empresas em maiúsculas e na cor delas (ainda sem commit) | 656 testes verdes, 16 de 17 mutações mortas (a que sobra é o repasse do tema ao menu: só existe o `dark`), imagem do menu renderizada com as pastas reais | nunca: o cursor, o teclado e o clique fora só foram exercitados nos testes |
 | Ícone do dragão (`7fa1ec6`) | coberto pelos testes | nunca |
 | Núcleo do M1 (`80cb7e8`) | coberto pelos testes | em uso, mas o roteiro da Task 15 do plano nunca foi rodado inteiro |
-| `Tests/packaging.sh` depois do diff | não rodou: exige o CLARK fechado | não se aplica |
+| Atualização automática pelo `update.sh` (commit seguinte ao `a204bab`) | 695 testes verdes; `Tests/packaging.sh` verde nos 11 passos, inclusive compilar o HEAD e reinstalar numa HOME de mentira | nunca: o app fechando e reaberto pelo Dock (E3) |
+| `Tests/packaging.sh` | verde em 2026-10-14, com o CLARK aberto | não se aplica |
 
 Os commits estão na `origin/main` (`dcea13e`). O app instalado em `~/Applications/Clark.app` já é
 a compilação com o diff: em 2026-10-11 o executável instalado era idêntico ao do `dist/`.
@@ -400,8 +401,14 @@ Estes passos pedem o [AiUsageBar](https://github.com/rafaelmgbh/ai-usage-bar) ro
 
 ## E. Depois do teste
 
-- [ ] **E1. `Tests/packaging.sh`.** Com o CLARK fechado (⌘Q), de dentro de `mac/`:
-  `Tests/packaging.sh`. O script recusa rodar com o app aberto.
+- [ ] **E1. `Tests/packaging.sh`.** De dentro de `mac/`: `Tests/packaging.sh`. Desde a atualização
+  automática, roda com o CLARK aberto e leva alguns minutos, porque compila o app de novo numa HOME
+  de mentira.
+
+- [ ] **E3. Atualização ao fechar.** Com um commit novo que mexa em `mac/`, saia do CLARK (⌘Q) e
+  acompanhe `tail -f ~/Library/Logs/Clark/update.log` até `CLARK atualizado para <commit>`. Abra
+  pelo Dock. Esperado: o app abre na versão nova, sem alerta do macOS, com os agentes de antes.
+  Saia de novo sem commit novo: o log fica vazio e nada é compilado.
 
 - [ ] **E2. Limpeza.** `rm -rf /tmp/clark-diff /tmp/clark-limpo /tmp/clark-vazio` e feche os agentes
   dessas pastas antes de sair, para eles não voltarem na restauração.
