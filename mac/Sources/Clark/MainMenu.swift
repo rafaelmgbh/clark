@@ -13,7 +13,7 @@ enum MainMenu {
             item("Sair do CLARK", #selector(NSApplication.terminate(_:)), "q"),
         ]))
         main.addItem(submenu("Arquivo", [
-            item("Novo agente", #selector(MainWindowController.newAgent(_:)), "n"),
+            item("Novo agente…", #selector(MainWindowController.newAgent(_:)), "n"),
             // `N` maiúsculo: o atalho é ⌘⇧N.
             item("Novo agente nesta pasta", #selector(MainWindowController.newSiblingAgent(_:)), "N"),
             item("Abrir projeto…", #selector(MainWindowController.chooseProject(_:)), "d"),

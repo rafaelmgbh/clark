@@ -139,12 +139,12 @@ final class MainWindowControllerTests: XCTestCase {
     }
 
     func testOldDefaultFolderInTheConfigIsKeptButNoLongerUsed() {
-        // O `cwd` das versões anteriores era a pasta do ⌘N. Hoje o ⌘N abre no GLOBAL; o valor fica no arquivo.
+        // O `cwd` das versões anteriores era a pasta do ⌘N. Hoje o GLOBAL do ⌘N abre na home; o valor fica no arquivo.
         let project = fixture.temp.makeDirectory("Projetos/acme")
         var config = ClarkConfig()
         config.cwd = project
         let controller = fixture.started(config: config)
-        controller.newAgent(nil)
+        choose(item(controller.agentMenu(), "GLOBAL"))
         XCTAssertEqual(controller.panes.map(\.directory), [fixture.home])
         XCTAssertEqual(savedConfig().cwd, project)
     }
@@ -1252,9 +1252,9 @@ final class MainWindowControllerTests: XCTestCase {
         XCTAssertTrue(controller.mainPane === controller.panes[1], "o agente do projeto vira o principal")
         XCTAssertEqual(controller.topBar.projectButton.title, "PROJETO")
 
-        controller.newAgent(nil)
+        choose(item(controller.agentMenu(), "GLOBAL"))
         XCTAssertEqual(controller.panes.map(\.directory), [fixture.home, api, fixture.home],
-                       "⌘N abre sempre no GLOBAL")
+                       "o GLOBAL do + AGENT abre na home, não na pasta do último agente")
     }
 
     func testCompanyFolderOtherFoldersAndDeepProjectsCanBeChosen() {
@@ -1349,7 +1349,7 @@ final class MainWindowControllerTests: XCTestCase {
         XCTAssertEqual(controller.warnings.messages.last, "limite de 16 agentes: feche um para abrir outro")
 
         controller.close(controller.panes[0])
-        controller.newAgent(nil)
+        controller.addAgents(1)
         XCTAssertEqual(controller.panes.last?.directory, fixture.home, "o projeto recusado não fica na fila")
     }
 
@@ -1406,6 +1406,122 @@ final class MainWindowControllerTests: XCTestCase {
         XCTAssertTrue(controller.pixelMenu.isOpen)
         controller.shutdown()
         XCTAssertFalse(controller.pixelMenu.isOpen)
+    }
+
+    // MARK: + AGENT
+
+    func testAgentMenuOffersGlobalTheProjectsAndATypedFolder() {
+        repository("Projetos/acme/api")
+        let controller = fixture.started()
+        XCTAssertEqual(outline(controller.agentMenu()), [
+            "GLOBAL",
+            "Projeto >", "  ACME >", "    Api", "    -", "    Pasta da empresa",
+            "Digitar pasta…",
+        ], "o Projeto traz as empresas do menu PROJETO, sem o GLOBAL e a Outra pasta, que já estão aqui")
+        XCTAssertEqual(item(controller.agentMenu(), "GLOBAL")?.toolTip, "~")
+    }
+
+    func testAgentMenuWithoutProjectsHasNoProjectRow() {
+        let controller = fixture.started()
+        XCTAssertEqual(outline(controller.agentMenu()), ["GLOBAL", "Digitar pasta…"])
+    }
+
+    func testAgentMenuProjectRowStartsWithTheMostUsed() {
+        let site = repository("Projetos/beta/site")
+        used(2, in: site)
+        let controller = fixture.started()
+        XCTAssertEqual(Array(outline(controller.agentMenu()).prefix(4)),
+                       ["GLOBAL", "Projeto >", "  Mais usados", "  beta › Site"])
+    }
+
+    func testGlobalInTheAgentMenuOpensAtHome() {
+        repository("Projetos/acme/api")
+        let controller = fixture.started()
+        choose(item(controller.agentMenu(), "GLOBAL"))
+        XCTAssertEqual(controller.panes.map(\.directory), [fixture.home])
+    }
+
+    func testProjectInTheAgentMenuOpensAnAgentThere() {
+        let api = repository("Projetos/acme/api")
+        let controller = fixture.started()
+        choose(item(controller.agentMenu(), "Projeto", "ACME", "Api"))
+        XCTAssertEqual(controller.panes.map(\.directory), [api])
+        XCTAssertEqual(controller.panes.map(\.project), ["Api"])
+    }
+
+    func testAddButtonOpensTheAgentMenuUnderIt() {
+        repository("Projetos/acme/api")
+        let controller = fixture.started(agents: 1)
+        var shown: [NSPanel] = []
+        controller.pixelMenu.present = { panel, _ in shown.append(panel) }
+        controller.pixelMenu.bounds = { _ in NSRect(x: -50_000, y: -50_000, width: 100_000, height: 100_000) }
+        let button = controller.topBar.addButton
+        button.onClick?()
+
+        XCTAssertTrue(controller.pixelMenu.isOpen)
+        XCTAssertEqual(controller.panes.count, 1, "o + AGENT pergunta antes de abrir")
+        XCTAssertEqual(controller.pixelMenu.levels[0].view.items.map(\.title), ["GLOBAL", "Projeto", "Digitar pasta…"])
+        let anchor = try? XCTUnwrap(button.window).convertToScreen(button.convert(button.bounds, to: nil))
+        XCTAssertEqual(shown[0].frame.minX, anchor?.minX)
+        XCTAssertEqual(shown[0].frame.maxY, (anchor?.minY ?? 0) - PixelMenu.gap, "logo abaixo do botão")
+
+        controller.pixelMenu.hover(1, level: 0)
+        controller.pixelMenu.hover(0, level: 1)
+        controller.pixelMenu.choose(0, level: 2)
+        XCTAssertFalse(controller.pixelMenu.isOpen)
+        XCTAssertEqual(controller.panes.map(\.project), ["GLOBAL", "Api"])
+    }
+
+    func testNewAgentShortcutOpensTheSameMenu() {
+        let controller = fixture.started(agents: 1)
+        controller.pixelMenu.present = { _, _ in }
+        controller.newAgent(nil)
+        XCTAssertTrue(controller.pixelMenu.isOpen)
+        XCTAssertEqual(controller.panes.count, 1, "o ⌘N pergunta como o + AGENT")
+        XCTAssertEqual(controller.pixelMenu.levels[0].view.items.map(\.title), ["GLOBAL", "Digitar pasta…"])
+    }
+
+    func testTypedFolderOpensAnAgentThere() {
+        let api = repository("Projetos/acme/api")
+        let controller = fixture.started()
+        controller.openTypedFolder("~/Projetos/acme/api/")
+        XCTAssertEqual(controller.panes.map(\.directory), [api])
+    }
+
+    func testTypedRelativeFolderStartsAtTheAgentInFocus() {
+        let acme = fixture.temp.makeDirectory("Projetos/acme")
+        let api = repository("Projetos/acme/api")
+        let controller = fixture.started()
+        controller.openAgent(in: acme)
+        controller.openTypedFolder("  api ")
+        XCTAssertEqual(controller.panes.map(\.directory), [acme, api])
+    }
+
+    func testTypedFolderThatDoesNotExistWarnsAndOpensNothing() {
+        let controller = fixture.started()
+        let before = controller.warnings.messages
+        controller.openTypedFolder("~/nao/existe")
+        XCTAssertTrue(controller.panes.isEmpty)
+        XCTAssertEqual(controller.warnings.messages, before + ["pasta nao encontrada: nada foi aberto"])
+    }
+
+    func testEmptyTypedFolderDoesNothing() {
+        let controller = fixture.started()
+        let before = controller.warnings.messages
+        controller.openTypedFolder("   ")
+        XCTAssertTrue(controller.panes.isEmpty)
+        XCTAssertEqual(controller.warnings.messages, before, "campo vazio não é pasta que sumiu")
+    }
+
+    func testTypeFolderShowsAFieldWhoseEnterOpensTheAgent() throws {
+        let api = repository("Projetos/acme/api")
+        let controller = fixture.started()
+        choose(item(controller.agentMenu(), "Digitar pasta…"))
+        let field = try XCTUnwrap(controller.folderField, "o Digitar pasta… mostra o campo")
+        field.stringValue = "~/Projetos/acme/api"
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(field.action), to: field.target, from: field))
+        XCTAssertEqual(controller.panes.map(\.directory), [api])
+        XCTAssertNil(controller.folderField, "o Enter fecha o campo")
     }
 
     // MARK: mais usados
@@ -1761,7 +1877,7 @@ final class MainWindowControllerTests: XCTestCase {
         }
         XCTAssertEqual(Set(shortcuts).count, shortcuts.count, "atalho repetido: \(shortcuts)")
         // As maiúsculas levam o Shift: `D` é o ⌘⇧D do diff e `d` o ⌘D do projeto; `N` é o ⌘⇧N do agente na
-        // mesma pasta e `n` o ⌘N do agente no GLOBAL.
+        // mesma pasta e `n` o ⌘N, que pergunta onde o agente abre.
         for key in ["n", "N", "w", "d", "D", "r", "l", "\r", "{", "}", "+", "=", "-", "0", "c", "v", "q"]
             + (1...9).map(String.init) {
             XCTAssertTrue(shortcuts.contains(key), "falta ⌘\(key)")

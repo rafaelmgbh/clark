@@ -93,7 +93,9 @@ nome do agente é cortado, pelo começo: o fim é o que distingue `AGENT 1` de `
 lista lateral traz o nome, o projeto numa linha própria, na cor da empresa, e a empresa em cinza.
 
 O CLARK começa no `GLOBAL`: um agente na home, para o que não é de projeto nenhum. O ⌘N e o
-`+ AGENT` também abrem no `GLOBAL`. Para trabalhar num projeto, use o botão `PROJETO` da barra (⌘D).
+`+ AGENT` perguntam onde o agente abre, num menu sob o botão: `GLOBAL`, `Projeto`, com os mesmos
+projetos do menu `PROJETO`, ou `Digitar pasta…`, um campo que aceita `~` e caminho relativo à pasta
+do agente em foco, e abre com Enter. O botão `PROJETO` da barra (⌘D) continua abrindo direto no projeto.
 
 O menu é desenhado pelo próprio CLARK, com a cara do resto do app, e abre em cascata: parar o cursor
 numa linha com `>` abre o submenu ao lado, sem clique. Pelo teclado, ↑ e ↓ trocam de linha, → ou
@@ -195,7 +197,7 @@ horas de renovação. Vale a conta padrão do Claude Code; sem ela no arquivo, a
 
 | Atalho | Ação |
 |--------|------|
-| ⌘N | Novo agente no `GLOBAL` |
+| ⌘N | Novo agente: `GLOBAL`, um projeto ou uma pasta digitada |
 | ⌘⇧N | Novo agente na pasta do agente em foco |
 | ⌘D | Abrir um agente num projeto |
 | ⌘⇧D | Ver o diff do agente em foco |

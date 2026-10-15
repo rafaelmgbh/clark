@@ -265,8 +265,15 @@ cd /tmp/clark-diff && git checkout -q -- b.txt && rm -f longo.txt bin.dat teste.
 - [ ] **B5. O `claude` enxerga o projeto.** No agente aberto no B4, rode `/memory`. Esperado: o
   `CLAUDE.md` (ou `AGENTS.md`) listado é o daquele projeto.
 
-- [ ] **B6. ⌘N e ⌘⇧N.** Com o agente do B4 em foco, ⌘N abre um agente no `GLOBAL`, e ⌘⇧N abre outro
-  na pasta do agente em foco. O botão direito no cabeçalho tem o mesmo `Novo agente nesta pasta`.
+- [ ] **B6. ⌘N e ⌘⇧N.** Com o agente do B4 em foco, ⌘N abre sob o `+ AGENT` o menu `GLOBAL`,
+  `Projeto`, `Digitar pasta…`; `GLOBAL` abre na home, e ⌘⇧N abre outro na pasta do agente em foco.
+  O botão direito no cabeçalho tem o mesmo `Novo agente nesta pasta`.
+
+- [ ] **B6a. + AGENT.** Clique no `+ AGENT`: o mesmo menu do ⌘N, logo abaixo do botão, sem abrir
+  agente ainda. `Projeto` em cascata mostra `Mais usados` e as empresas do menu `PROJETO`;
+  escolher um projeto abre o agente nele. `Digitar pasta…` mostra um campo sob o botão:
+  `~/Projetos/Sulivam/larys` + Enter abre lá; com um agente em foco num repo, `docs` + Enter abre a
+  subpasta dele; uma pasta que não existe só dá o aviso; Esc ou clicar fora fecha sem abrir.
 
 - [ ] **B7. Apelidar.** Botão direito no cabeçalho do agente do B4, `Apelidar projeto…`, digite um
   nome e Enter. Esperado: o cabeçalho e o card de todos os agentes daquele projeto trocam na hora; no
@@ -294,7 +301,7 @@ cd /tmp/clark-diff && git checkout -q -- b.txt && rm -f longo.txt bin.dat teste.
   continuam distinguíveis e a etiqueta de estado não some.
 
 - [ ] **B13. Linha de comando.** Com o CLARK fechado: `clark ~/alguma/pasta` restaura os agentes e
-  abre mais um naquela pasta; um ⌘N depois disso abre no `GLOBAL`. `clark /nao/existe` abre o agente
+  abre mais um naquela pasta; um ⌘N › `GLOBAL` depois disso abre na home. `clark /nao/existe` abre o agente
   no `GLOBAL` e a barra de avisos diz que a pasta não foi encontrada.
 
 - [ ] **B14. Ícone.** O dragão aparece no Dock, no ⌘Tab e no Finder (`~/Applications`), nítido nos
@@ -435,7 +442,8 @@ O teste é a hora de confirmar ou trocar o que foi decidido sem consulta no diff
 
 E no que veio depois, também sem consulta:
 
-- ⌘N sempre no `GLOBAL`, e ⌘⇧N para repetir a pasta do agente em foco.
+- ⌘N sempre no `GLOBAL`, e ⌘⇧N para repetir a pasta do agente em foco. (Depois: ⌘N e `+ AGENT`
+  perguntam `GLOBAL`, `Projeto` ou `Digitar pasta…`.)
 - `clark PASTA` abre um agente lá e não vira padrão.
 - Projeto é a pasta com git ou com instruções para agente, até quatro níveis abaixo da empresa.
 - O apelido é do repositório e vale nas subpastas; fica no `config.json`.

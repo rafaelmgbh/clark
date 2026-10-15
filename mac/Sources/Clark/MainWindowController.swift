@@ -32,8 +32,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     var diffAutosaveName: String?
     /// Põe uma janela auxiliar na tela. Trocado nos testes, que não abrem janela.
     var present: (NSWindowController) -> Void = { $0.showWindow(nil) }
-    /// Quem mostra o menu do botão PROJETO.
+    /// Quem mostra o menu do botão PROJETO e o do + AGENT.
     let pixelMenu = PixelMenu()
+    /// Campo do "Digitar pasta…" do + AGENT, enquanto está aberto.
+    private(set) var folderField: NSTextField?
 
     private var config: ClarkConfig
     private let store: ConfigStore
@@ -49,6 +51,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     private var responderObservation: NSKeyValueObservation?
     private var activationObserver: NSObjectProtocol?
     private var renamePopover: NSPopover?
+    private var folderPopover: NSPopover?
     private weak var renameTarget: AgentPaneView?
     /// O campo do popover está editando o apelido do projeto, não o nome do agente.
     private var renamesProject = false
@@ -114,7 +117,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         [stage, emptyView, sidebar, warnings, topBar].forEach(root.addSubview)
         topBar.projectButton.onClick = { [weak self] in self?.chooseProject(nil) }
         topBar.layoutButton.onClick = { [weak self] in self?.toggleLayout(nil) }
-        topBar.addButton.onClick = { [weak self] in self?.addAgents(1) }
+        topBar.addButton.onClick = { [weak self] in self?.newAgent(nil) }
         sidebar.closeAllButton.onClick = { [weak self] in self?.closeAllAgents(nil) }
         emptyView.onAdd = { [weak self] count in self?.addAgents(count) }
         warnings.onChange = { [weak self] in self?.layoutContent() }
@@ -379,21 +382,32 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     static let worktreesTitle = "Worktrees"
     static let otherFolderTitle = "Outra pasta…"
     static let mostUsedTitle = "Mais usados"
+    static let agentProjectTitle = "Projeto"
+    static let typedFolderTitle = "Digitar pasta…"
 
     /// Menu do botão PROJETO, relido do disco a cada abertura: os projetos mais usados, o `GLOBAL`,
     /// uma empresa por linha com os projetos dela a um clique, as pastas apelidadas fora de toda
     /// empresa e a escolha de outra pasta.
     func projectMenu() -> NSMenu {
         let menu = NSMenu(title: "Projeto")
-        let groups = launch?.projectGroups(nicknames: config.projectNames) ?? []
-        var blocks: [[NSMenuItem]] = [mostUsedItems(groups), [projectItem(ProjectNaming.global, path: home)]]
-        blocks.append(groups.filter { !$0.folders.isEmpty }.map(companyItem))
-        blocks.append(groups.filter { $0.folders.isEmpty }.flatMap(\.nicknamed).map(projectItem))
+        var blocks = projectBlocks()
+        blocks.insert([projectItem(ProjectNaming.global, path: home)], at: 1)
         let other = NSMenuItem(title: Self.otherFolderTitle, action: #selector(chooseFolder(_:)), keyEquivalent: "")
         other.target = self
         blocks.append([other])
         Self.fill(menu, with: blocks)
         return menu
+    }
+
+    /// Os projetos do disco, lidos agora, em três blocos: os mais usados, as empresas e as pastas
+    /// apelidadas fora de toda empresa.
+    private func projectBlocks() -> [[NSMenuItem]] {
+        let groups = launch?.projectGroups(nicknames: config.projectNames) ?? []
+        return [
+            mostUsedItems(groups),
+            groups.filter { !$0.folders.isEmpty }.map(companyItem),
+            groups.filter { $0.folders.isEmpty }.flatMap(\.nicknamed).map(projectItem),
+        ]
     }
 
     /// Bloco de cima do menu: as pastas em que o Claude Code mais foi usado, entre tudo o que o menu
@@ -499,7 +513,30 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         return holder
     }
 
-    /// Abre um agente na pasta do projeto. O ⌘N e o + AGENT continuam abrindo no `GLOBAL`.
+    /// Menu do + AGENT e do ⌘N: onde o agente novo abre. O `GLOBAL`, os projetos do menu PROJETO num
+    /// submenu, que some quando não há nenhum, e uma pasta digitada.
+    func agentMenu() -> NSMenu {
+        let menu = NSMenu(title: "Novo agente")
+        menu.addItem(projectItem(ProjectNaming.global, path: home))
+        let projects = projectBlocks()
+        if projects.contains(where: { !$0.isEmpty }) {
+            menu.addItem(Self.submenuItem(Self.agentProjectTitle, blocks: projects))
+        }
+        let typed = NSMenuItem(title: Self.typedFolderTitle, action: #selector(typeFolder(_:)), keyEquivalent: "")
+        typed.target = self
+        menu.addItem(typed)
+        return menu
+    }
+
+    /// Abre um agente na pasta digitada no + AGENT. Aceita `~` e caminho relativo à pasta do agente em
+    /// foco. Texto vazio não abre nada.
+    func openTypedFolder(_ text: String) {
+        let typed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !typed.isEmpty else { return }
+        openAgent(in: PathTools.absolute(typed, base: currentPane?.directory ?? home, home: home))
+    }
+
+    /// Abre um agente na pasta do projeto.
     func openAgent(in directory: String) {
         guard launch != nil else { return }
         guard PathTools.isDirectory(directory) else {
@@ -697,25 +734,32 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Campo de texto num popover sob o cabeçalho do agente: o nome dele ou o apelido do projeto.
     private func presentNameField(for pane: AgentPaneView, text: String, placeholder: String, project: Bool) {
         renamePopover?.close()
-        let field = NSTextField(string: text)
-        field.placeholderString = placeholder
-        field.frame = NSRect(x: 10, y: 10, width: 240, height: 24)
-        field.font = .monospacedSystemFont(ofSize: 13, weight: .bold)
-        field.target = self
-        field.action = #selector(commitRename(_:))
-        // Clicar fora fecha sem renomear: só o Enter confirma.
-        field.cell?.sendsActionOnEndEditing = false
-        let content = NSViewController()
-        content.view = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 44))
-        content.view.addSubview(field)
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.contentViewController = content
+        let (popover, field) = fieldPopover(text: text, placeholder: placeholder, width: 240,
+                                            action: #selector(commitRename(_:)))
         renamePopover = popover
         renameTarget = pane
         renamesProject = project
         popover.show(relativeTo: pane.header.bounds, of: pane.header, preferredEdge: .maxY)
         field.selectText(nil)
+    }
+
+    /// Popover com um campo de texto que só confirma no Enter: clicar fora fecha sem fazer nada.
+    private func fieldPopover(text: String, placeholder: String, width: CGFloat,
+                              action: Selector) -> (NSPopover, NSTextField) {
+        let field = NSTextField(string: text)
+        field.placeholderString = placeholder
+        field.frame = NSRect(x: 10, y: 10, width: width, height: 24)
+        field.font = .monospacedSystemFont(ofSize: 13, weight: .bold)
+        field.target = self
+        field.action = action
+        field.cell?.sendsActionOnEndEditing = false
+        let content = NSViewController()
+        content.view = NSView(frame: NSRect(x: 0, y: 0, width: width + 20, height: 44))
+        content.view.addSubview(field)
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = content
+        return (popover, field)
     }
 
     @objc private func commitRename(_ sender: NSTextField) {
@@ -744,7 +788,32 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     // MARK: menu
 
-    @objc func newAgent(_ sender: Any?) { addAgents(1) }
+    /// ⌘N e + AGENT: pergunta onde o agente abre, num menu logo abaixo do botão.
+    @objc func newAgent(_ sender: Any?) {
+        guard launch != nil else { return }
+        pixelMenu.theme = theme
+        pixelMenu.show(agentMenu(), below: topBar.addButton)
+    }
+
+    /// "Digitar pasta…" do + AGENT: campo de texto sob o botão. O Enter abre o agente na pasta.
+    @objc func typeFolder(_ sender: Any?) {
+        guard launch != nil else { return }
+        folderPopover?.close()
+        let (popover, field) = fieldPopover(text: "", placeholder: "Pasta: ~/Projetos/... ou relativa",
+                                            width: 360, action: #selector(commitTypedFolder(_:)))
+        folderPopover = popover
+        folderField = field
+        // O botão é flipped: `maxY` é a borda de baixo.
+        popover.show(relativeTo: topBar.addButton.bounds, of: topBar.addButton, preferredEdge: .maxY)
+        field.selectText(nil)
+    }
+
+    @objc private func commitTypedFolder(_ sender: NSTextField) {
+        folderPopover?.close()
+        folderPopover = nil
+        folderField = nil
+        openTypedFolder(sender.stringValue)
+    }
 
     /// Mais um agente na pasta do agente atual.
     @objc func newSiblingAgent(_ sender: Any?) {
@@ -863,7 +932,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             return !panes.isEmpty && panes.count < ClarkConfig.maxAgents
         case #selector(nicknameProject(_:)):
             return currentPane.map { !$0.isGlobal } ?? false
-        case #selector(chooseProject(_:)), #selector(openProject(_:)), #selector(chooseFolder(_:)):
+        case #selector(chooseProject(_:)), #selector(openProject(_:)), #selector(chooseFolder(_:)),
+             #selector(typeFolder(_:)):
             return launch != nil
         case #selector(closeAllAgents(_:)), #selector(toggleZoom(_:)), #selector(renameAgent(_:)),
              #selector(showDiff(_:)), #selector(refreshDiff(_:)):
