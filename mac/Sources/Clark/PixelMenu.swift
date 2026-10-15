@@ -49,19 +49,25 @@ final class PixelMenu {
     // MARK: abrir e fechar
 
     /// Abre o menu logo abaixo de `anchor`, alinhado à esquerda dela.
-    func show(_ menu: NSMenu, below anchor: NSView) {
+    func show(_ menu: NSMenu, below anchor: NSView, entering item: NSMenuItem? = nil) {
         guard let window = anchor.window else { return }
         let rect = window.convertToScreen(anchor.convert(anchor.bounds, to: nil))
-        show(menu, at: NSPoint(x: rect.minX, y: rect.minY - Self.gap), over: window)
+        show(menu, at: NSPoint(x: rect.minX, y: rect.minY - Self.gap), over: window, entering: item)
     }
 
-    /// Abre o menu com o canto de cima à esquerda em `topLeft`, em coordenadas da tela.
-    func show(_ menu: NSMenu, at topLeft: NSPoint, over window: NSWindow?) {
+    /// Abre o menu com o canto de cima à esquerda em `topLeft`, em coordenadas da tela. Com `entering`,
+    /// abre também o submenu desse item, com o destaque na primeira linha dele, como depois de um →.
+    func show(_ menu: NSMenu, at topLeft: NSPoint, over window: NSWindow?, entering item: NSMenuItem? = nil) {
         close()
         parent = window
         let bounds = bounds(window)
         push(menu) { Self.rootFrame(size: $0, topLeft: topLeft, within: bounds) }
         listen()
+        guard let item, item.hasSubmenu, let row = levels[0].view.items.firstIndex(where: { $0 === item }) else {
+            return
+        }
+        levels[0].view.highlighted = row
+        enterSubmenu(of: row, level: 0)
     }
 
     func close() {
@@ -178,12 +184,12 @@ final class PixelMenu {
         pause = nil
     }
 
-    /// A linha foi clicada, ou escolhida pelo teclado: abre o submenu dela, ou fecha o menu e manda a
-    /// ação do item.
+    /// A linha foi clicada, ou escolhida pelo teclado: fecha o menu e manda a ação do item. A linha com
+    /// submenu e sem ação abre o submenu; a que tem os dois, como a empresa, faz a ação.
     func choose(_ row: Int, level index: Int) {
         guard levels.indices.contains(index), levels[index].view.items.indices.contains(row) else { return }
         let item = levels[index].view.items[row]
-        if item.hasSubmenu {
+        if item.hasSubmenu, !Self.hasOwnAction(item) {
             cancelPause()
             levels[index].view.highlighted = row
             if levels[index].openRow != row { openSubmenu(of: row, level: index) }
@@ -209,11 +215,15 @@ final class PixelMenu {
             closeLevels(after: index)
             view.highlighted = row
             view.reveal(row: row)
-        case .right, .enter:
+        case .right:
+            guard let row = view.highlighted, view.items[row].hasSubmenu else { break }
+            enterSubmenu(of: row, level: index)
+        case .enter:
             guard let row = view.highlighted else { break }
-            if view.items[row].hasSubmenu {
+            // Como o clique: a linha com submenu e ação faz a ação; só a seta para a direita entra nela.
+            if view.items[row].hasSubmenu, !Self.hasOwnAction(view.items[row]) {
                 enterSubmenu(of: row, level: index)
-            } else if key == .enter {
+            } else {
                 choose(row, level: index)
             }
         case .left:
@@ -222,6 +232,13 @@ final class PixelMenu {
             close()
         }
         return true
+    }
+
+    /// Se a linha faz alguma coisa além de abrir o submenu dela. O AppKit põe `submenuAction:` em todo
+    /// item que ganha submenu: essa não conta.
+    static func hasOwnAction(_ item: NSMenuItem) -> Bool {
+        guard let action = item.action else { return false }
+        return action != #selector(NSMenu.submenuAction(_:))
     }
 
     /// Abre o submenu da linha e leva o destaque para a primeira linha dele.

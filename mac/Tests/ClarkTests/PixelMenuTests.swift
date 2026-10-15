@@ -224,6 +224,51 @@ final class PixelMenuTests: XCTestCase {
         XCTAssertEqual(picker.picked, [])
     }
 
+    /// `tree`, com uma ação também na linha `ACME`, como a empresa que abre a pasta dela.
+    private func openWithActionOnAcme() {
+        let tree = tree()
+        tree.items[acme].action = #selector(Picker.pick(_:))
+        menu.show(tree, at: NSPoint(x: 100, y: 800), over: nil)
+    }
+
+    func testClickingASubmenuRowThatHasAnActionSendsIt() {
+        openWithActionOnAcme()
+        menu.hover(acme, level: 0)
+        XCTAssertEqual(titles.count, 2, "o cursor continua abrindo o submenu")
+        menu.choose(acme, level: 0)
+        XCTAssertEqual(picker.picked, ["ACME"])
+        XCTAssertFalse(menu.isOpen)
+    }
+
+    func testEnterSendsTheActionOfASubmenuRowAndRightStillEntersIt() {
+        openWithActionOnAcme()
+        menu.keyDown(.down)
+        menu.keyDown(.down)
+        menu.keyDown(.right)
+        XCTAssertEqual(highlights, [acme, 0], "a seta para a direita entra no submenu")
+        XCTAssertEqual(picker.picked, [])
+        menu.keyDown(.left)
+        menu.keyDown(.enter)
+        XCTAssertEqual(picker.picked, ["ACME"])
+        XCTAssertFalse(menu.isOpen)
+    }
+
+    func testShowCanOpenAlreadyInsideASubmenu() {
+        let tree = tree()
+        menu.show(tree, at: NSPoint(x: 100, y: 800), over: nil, entering: tree.items[acme])
+        XCTAssertEqual(titles.count, 2)
+        XCTAssertEqual(highlights, [acme, 0], "pronto para as setas, como depois de um →")
+        menu.keyDown(.enter)
+        XCTAssertEqual(picker.picked, ["Loja"])
+    }
+
+    func testShowEnteringARowWithoutSubmenuOnlyOpensTheMenu() {
+        let tree = tree()
+        menu.show(tree, at: NSPoint(x: 100, y: 800), over: nil, entering: tree.items[api])
+        XCTAssertEqual(titles.count, 1)
+        XCTAssertEqual(highlights, [nil])
+    }
+
     func testTheViewsReportToTheMenu() {
         open()
         menu.levels[0].view.onHover?(acme)
@@ -355,7 +400,7 @@ final class PixelMenuTests: XCTestCase {
         open()
         let click = NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
                                        windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
-        XCTAssertNil(menu.intercept(click), "clicar de novo no botão PROJETO só fecha o menu")
+        XCTAssertNil(menu.intercept(click), "clicar de novo no + AGENT só fecha o menu")
         XCTAssertFalse(menu.isOpen)
         XCTAssertTrue(menu.intercept(click) === click)
     }

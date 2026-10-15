@@ -32,7 +32,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     var diffAutosaveName: String?
     /// Põe uma janela auxiliar na tela. Trocado nos testes, que não abrem janela.
     var present: (NSWindowController) -> Void = { $0.showWindow(nil) }
-    /// Quem mostra o menu do botão PROJETO e o do + AGENT.
+    /// Quem mostra o menu do + AGENT.
     let pixelMenu = PixelMenu()
     /// Campo do "Digitar pasta…" do + AGENT, enquanto está aberto.
     private(set) var folderField: NSTextField?
@@ -115,7 +115,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         window.contentView = root
         for view in [topBar, warnings, sidebar, emptyView] as [PixelView] { view.theme = theme }
         [stage, emptyView, sidebar, warnings, topBar].forEach(root.addSubview)
-        topBar.projectButton.onClick = { [weak self] in self?.chooseProject(nil) }
         topBar.layoutButton.onClick = { [weak self] in self?.toggleLayout(nil) }
         topBar.addButton.onClick = { [weak self] in self?.newAgent(nil) }
         sidebar.closeAllButton.onClick = { [weak self] in self?.closeAllAgents(nil) }
@@ -382,63 +381,67 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     static let worktreesTitle = "Worktrees"
     static let otherFolderTitle = "Outra pasta…"
     static let mostUsedTitle = "Mais usados"
+    static let companiesTitle = "Empresas"
     static let agentProjectTitle = "Projeto"
     static let typedFolderTitle = "Digitar pasta…"
 
-    /// Menu do botão PROJETO, relido do disco a cada abertura: os projetos mais usados, o `GLOBAL`,
-    /// uma empresa por linha com os projetos dela a um clique, as pastas apelidadas fora de toda
-    /// empresa e a escolha de outra pasta.
+    /// Cascata `Projeto` do + AGENT e do ⌘D, relida do disco a cada abertura: os projetos mais usados,
+    /// uma empresa por linha com os projetos dela a um clique e as pastas apelidadas fora de toda
+    /// empresa.
     func projectMenu() -> NSMenu {
-        let menu = NSMenu(title: "Projeto")
-        var blocks = projectBlocks()
-        blocks.insert([projectItem(ProjectNaming.global, path: home)], at: 1)
-        let other = NSMenuItem(title: Self.otherFolderTitle, action: #selector(chooseFolder(_:)), keyEquivalent: "")
-        other.target = self
-        blocks.append([other])
-        Self.fill(menu, with: blocks)
+        let menu = NSMenu(title: Self.agentProjectTitle)
+        let groups = launch?.projectGroups(nicknames: config.projectNames) ?? []
+        let companies = groups.filter { !$0.folders.isEmpty }.map(companyItem)
+        Self.fill(menu, with: [
+            mostUsedItems(groups),
+            companies.isEmpty ? [] : [.sectionHeader(title: Self.companiesTitle)] + companies,
+            groups.filter { $0.folders.isEmpty }.flatMap(\.nicknamed).map(projectItem),
+        ])
         return menu
     }
 
-    /// Os projetos do disco, lidos agora, em três blocos: os mais usados, as empresas e as pastas
-    /// apelidadas fora de toda empresa.
-    private func projectBlocks() -> [[NSMenuItem]] {
-        let groups = launch?.projectGroups(nicknames: config.projectNames) ?? []
-        return [
-            mostUsedItems(groups),
-            groups.filter { !$0.folders.isEmpty }.map(companyItem),
-            groups.filter { $0.folders.isEmpty }.flatMap(\.nicknamed).map(projectItem),
-        ]
-    }
-
     /// Bloco de cima do menu: as pastas em que o Claude Code mais foi usado, entre tudo o que o menu
-    /// oferece nas empresas e nas apelidadas. O `GLOBAL` não entra na conta: já é a linha seguinte.
+    /// oferece nas empresas e nas apelidadas, juntas sob o nome da empresa. A empresa do mais usado vem
+    /// primeiro. A home não entra na conta: é o `GLOBAL` do + AGENT.
     private func mostUsedItems(_ groups: [ProjectGroup]) -> [NSMenuItem] {
         guard let launch else { return [] }
         // Pela pasta de verdade: é por ela que o Claude Code guarda a conversa de quem entrou por um link.
-        var offered: [String: (title: String, path: String)] = [:]
+        var offered: [String: (title: String, path: String, group: Int)] = [:]
         var order: [String] = []
-        func offer(_ title: String, _ path: String) {
+        func offer(_ title: String, _ path: String, group: Int) {
             let real = launch.canonical(path)
             guard offered[real] == nil else { return }
-            offered[real] = (title, path)
+            offered[real] = (title, path, group)
             order.append(real)
         }
-        for group in groups {
-            // Fora do submenu da empresa o nome dela vai junto: dois projetos `Api` não se confundem.
-            let prefix = group.folders.isEmpty ? "" : group.name + " › "
+        for (index, group) in groups.enumerated() {
             let deep = group.sections.flatMap { ($0.folder.map { [$0] } ?? []) + $0.projects }
             for entry in group.nicknamed + group.projects + deep + group.worktrees + group.others {
-                offer(prefix + entry.name, entry.path)
+                offer(entry.name, entry.path, group: index)
             }
             for folder in group.folders {
-                offer(group.folders.count == 1 ? group.name : prefix + PathTools.short(folder, home: home), folder)
+                let title = group.folders.count == 1 ? Self.companyFolderTitle : PathTools.short(folder, home: home)
+                offer(title, folder, group: index)
             }
         }
         let configDir = SessionLocator.configDir(environment: launch.baseEnvironment, home: launch.home)
         let used = ProjectUsage.mostUsed(order, configDir: configDir, now: Date(timeIntervalSince1970: wallClock()))
             .compactMap { offered[$0] }
         guard !used.isEmpty else { return [] }
-        return [NSMenuItem.sectionHeader(title: Self.mostUsedTitle)] + used.map { projectItem($0.title, path: $0.path) }
+        var items = [NSMenuItem.sectionHeader(title: Self.mostUsedTitle)]
+        var seen: Set<Int> = []
+        for index in used.map(\.group) where seen.insert(index).inserted {
+            // Sob o nome da empresa, dois projetos `Api` não se confundem. A apelidada fora de toda
+            // empresa não tem nome em cima nem recuo.
+            let company = !groups[index].folders.isEmpty
+            if company { items.append(companyLabel(groups[index])) }
+            for suggestion in used where suggestion.group == index {
+                let item = projectItem(suggestion.title, path: suggestion.path)
+                item.indentationLevel = company ? 1 : 0
+                items.append(item)
+            }
+        }
+        return items
     }
 
     /// Os blocos que têm item, com um separador entre eles.
@@ -473,13 +476,34 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Linha de uma empresa, em maiúsculas e com o quadradinho da cor dela, como a etiqueta no
     /// cabeçalho do agente. O submenu traz, de cima para baixo: os projetos apelidados, os do
     /// primeiro nível, um grupo por pasta que guarda projetos mais fundos, as worktrees, as pastas
-    /// que não são projeto e a pasta da própria empresa.
+    /// que não são projeto e a pasta da própria empresa. O clique na linha abre o agente na pasta da
+    /// empresa; o cursor e a seta abrem o submenu.
     private func companyItem(_ group: ProjectGroup) -> NSMenuItem {
         let item = companyEntries(group, title: group.name.uppercased())
-        if let launch, let folder = group.folders.first {
-            item.image = PixelMenuView.swatch(launch.company(forDirectory: folder).color)
+        item.image = swatch(group)
+        // Com mais de uma pasta não há uma só para abrir: fica só o submenu.
+        if item.hasSubmenu, group.folders.count == 1 {
+            item.action = #selector(openProject(_:))
+            item.target = self
+            item.representedObject = group.folders[0]
+            item.toolTip = PathTools.short(group.folders[0], home: home)
         }
         return item
+    }
+
+    /// Nome da empresa sobre os projetos dela nos mais usados: a mesma cara da linha da empresa,
+    /// apagada, porque não é uma escolha.
+    private func companyLabel(_ group: ProjectGroup) -> NSMenuItem {
+        let label = NSMenuItem(title: group.name.uppercased(), action: nil, keyEquivalent: "")
+        label.isEnabled = false
+        label.image = swatch(group)
+        return label
+    }
+
+    /// Quadradinho da cor da empresa, como a etiqueta no cabeçalho do agente.
+    private func swatch(_ group: ProjectGroup) -> NSImage? {
+        guard let launch, let folder = group.folders.first else { return nil }
+        return PixelMenuView.swatch(launch.company(forDirectory: folder).color)
     }
 
     private func companyEntries(_ group: ProjectGroup, title: String) -> NSMenuItem {
@@ -513,18 +537,23 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         return holder
     }
 
-    /// Menu do + AGENT e do ⌘N: onde o agente novo abre. O `GLOBAL`, os projetos do menu PROJETO num
-    /// submenu, que some quando não há nenhum, e uma pasta digitada.
+    /// Menu do + AGENT, do ⌘N e do ⌘D: onde o agente novo abre. O `GLOBAL`, a cascata `Projeto`, que
+    /// some quando não há nenhum, uma pasta digitada e qualquer pasta escolhida no Finder.
     func agentMenu() -> NSMenu {
         let menu = NSMenu(title: "Novo agente")
         menu.addItem(projectItem(ProjectNaming.global, path: home))
-        let projects = projectBlocks()
-        if projects.contains(where: { !$0.isEmpty }) {
-            menu.addItem(Self.submenuItem(Self.agentProjectTitle, blocks: projects))
+        let projects = projectMenu()
+        if !projects.items.isEmpty {
+            let holder = NSMenuItem(title: Self.agentProjectTitle, action: nil, keyEquivalent: "")
+            holder.submenu = projects
+            menu.addItem(holder)
         }
-        let typed = NSMenuItem(title: Self.typedFolderTitle, action: #selector(typeFolder(_:)), keyEquivalent: "")
-        typed.target = self
-        menu.addItem(typed)
+        for (title, action) in [(Self.typedFolderTitle, #selector(typeFolder(_:))),
+                                (Self.otherFolderTitle, #selector(chooseFolder(_:)))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
         return menu
     }
 
@@ -853,17 +882,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         choices[choice].panes.forEach(close)
     }
 
+    /// ⌘D: o menu do + AGENT já dentro da cascata `Projeto`, pronto para as setas.
     @objc func chooseProject(_ sender: Any?) {
         guard launch != nil else { return }
+        let menu = agentMenu()
         pixelMenu.theme = theme
-        pixelMenu.show(projectMenu(), below: topBar.projectButton)
+        pixelMenu.show(menu, below: topBar.addButton, entering: menu.items.first { $0.hasSubmenu })
     }
 
     @objc func openProject(_ sender: NSMenuItem) {
         if let path = sender.representedObject as? String { openAgent(in: path) }
     }
 
-    /// "Outra pasta…" do menu PROJETO: qualquer pasta do disco.
+    /// "Outra pasta…" do + AGENT: qualquer pasta do disco.
     @objc func chooseFolder(_ sender: Any?) {
         guard let window, launch != nil else { return }
         let panel = NSOpenPanel()

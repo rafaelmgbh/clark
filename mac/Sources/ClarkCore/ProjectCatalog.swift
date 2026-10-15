@@ -1,6 +1,6 @@
 import Foundation
 
-/// Pasta que o menu PROJETO oferece.
+/// Pasta que a cascata `Projeto` do + AGENT oferece.
 public struct ProjectEntry: Equatable, Sendable {
     /// Apelido dado pelo usuário ou o nome da pasta arrumado.
     public let name: String
@@ -12,7 +12,7 @@ public struct ProjectEntry: Equatable, Sendable {
     }
 }
 
-/// Projetos que estão na mesma pasta, abaixo do primeiro nível da empresa: um submenu do menu PROJETO.
+/// Projetos que estão na mesma pasta, abaixo do primeiro nível da empresa: um submenu da cascata `Projeto`.
 public struct ProjectSection: Equatable, Sendable {
     /// Nome arrumado da pasta que junta os projetos. As pastas de fora entram só para separar
     /// dois grupos de mesmo nome: "Clientes › Erp".
@@ -31,7 +31,7 @@ public struct ProjectSection: Equatable, Sendable {
     }
 }
 
-/// Uma empresa com o que o menu PROJETO lista dela.
+/// Uma empresa com o que a cascata `Projeto` lista dela.
 public struct ProjectGroup: Equatable, Sendable {
     public let name: String
     /// Pastas da empresa: uma na detecção automática, uma por `path` que existe no `companies.json`.

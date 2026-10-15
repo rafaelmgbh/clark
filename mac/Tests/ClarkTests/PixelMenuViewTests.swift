@@ -162,6 +162,25 @@ final class PixelMenuViewTests: XCTestCase {
         XCTAssertEqual(self.view().titleX, PixelMenuView.textX, "sem quadradinho, o título não recua")
     }
 
+    func testIndentedRowMovesItsTitleRight() {
+        let deep = item("Natutec")
+        deep.indentationLevel = 1
+        let view = PixelMenuView(items: [item("Natutec"), deep])
+        view.frame = NSRect(x: 0, y: 0, width: view.fittingWidth, height: view.fittingHeight)
+        let image = image(view)
+        let x = view.titleX, indent = PixelMenuView.indent, height = PixelMenuView.rowHeight
+        XCTAssertGreaterThan(image.count(theme.ink, x: x, y: view.top(of: 0), width: indent, height: height), 0)
+        XCTAssertEqual(image.count(theme.ink, x: 0, y: view.top(of: 1), width: x + indent, height: height), 0,
+                       "a linha recuada começa um recuo depois")
+        XCTAssertGreaterThan(image.count(theme.ink, x: x + indent, y: view.top(of: 1), width: indent, height: height), 0)
+
+        let long = String(repeating: "m", count: 30)
+        let deepLong = item(long)
+        deepLong.indentationLevel = 1
+        XCTAssertEqual(PixelMenuView(items: [deepLong]).fittingWidth,
+                       PixelMenuView(items: [item(long)]).fittingWidth + indent, "o recuo entra na largura")
+    }
+
     func testSeparatorIsALineAcrossTheMenu() {
         let view = view()
         let image = image(view)

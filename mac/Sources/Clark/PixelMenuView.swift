@@ -16,6 +16,8 @@ final class PixelMenuView: PixelView {
     static let barWidth = 3
     static let swatchSide = 8
     static let swatchGap = 6
+    /// Quanto a linha anda para a direita por nível do `indentationLevel` do item.
+    static let indent = 12
     /// Do canto direito da face até a seta de quem tem submenu.
     static let arrowInset = 14
     /// Folga à direita do título, onde fica a seta.
@@ -74,7 +76,8 @@ final class PixelMenuView: PixelView {
         let widest = rows.map { item -> Int in
             if item.isSeparatorItem { return 0 }
             if item.isSectionHeader { return 2 * Self.textX + PixelFont.textWidth(item.title, scale: 1) }
-            return titleX + Pixel.monoWidth(item.title, size: Self.fontSize, bold: true) + Self.trailing
+            return titleX + Self.offset(of: item) + Pixel.monoWidth(item.title, size: Self.fontSize, bold: true)
+                + Self.trailing
         }.max() ?? 0
         fittingWidth = min(Self.maxWidth, max(Self.minWidth, widest)) + Self.shadow
         super.init(frame: .zero)
@@ -82,6 +85,9 @@ final class PixelMenuView: PixelView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) não é usado") }
+
+    /// Recuo da linha: o quadradinho e o título andam juntos.
+    private static func offset(of item: NSMenuItem) -> Int { item.indentationLevel * indent }
 
     private static func height(of item: NSMenuItem) -> Int {
         if item.isSeparatorItem { return separatorHeight }
@@ -153,7 +159,7 @@ final class PixelMenuView: PixelView {
     override func mouseMoved(with event: NSEvent) { onHover?(row(at: event)) }
     // O clique sem movimento antes, com o cursor já parado onde o menu abriu, também destaca a linha.
     override func mouseDown(with event: NSEvent) { onHover?(row(at: event)) }
-    // Apertar no botão PROJETO, arrastar e soltar na linha também escolhe.
+    // Apertar no + AGENT, arrastar e soltar na linha também escolhe.
     override func mouseDragged(with event: NSEvent) { onHover?(row(at: event)) }
     override func mouseExited(with event: NSEvent) { onHover?(nil) }
 
@@ -208,12 +214,13 @@ final class PixelMenuView: PixelView {
             Pixel.fill(context, Self.border, top, faceWidth - 2 * Self.border, Self.rowHeight, theme.bg4)
             Pixel.fill(context, Self.border, top, Self.barWidth, Self.rowHeight, theme.accent)
         }
-        item.image?.draw(in: NSRect(x: Self.textX, y: top + (Self.rowHeight - Self.swatchSide) / 2,
+        let offset = Self.offset(of: item)
+        item.image?.draw(in: NSRect(x: Self.textX + offset, y: top + (Self.rowHeight - Self.swatchSide) / 2,
                                     width: Self.swatchSide, height: Self.swatchSide),
                          from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         let lineHeight = Pixel.monoLineHeight(size: Self.fontSize, bold: true)
-        Pixel.mono(context, item.title, titleX, top + (Self.rowHeight - lineHeight) / 2,
-                   width: faceWidth - titleX - Self.trailing + 1, size: Self.fontSize,
+        Pixel.mono(context, item.title, titleX + offset, top + (Self.rowHeight - lineHeight) / 2,
+                   width: faceWidth - titleX - offset - Self.trailing + 1, size: Self.fontSize,
                    item.isEnabled ? theme.ink : theme.dim, bold: true)
         if item.hasSubmenu {
             Pixel.text(context, ">", faceWidth - Self.arrowInset, top + (Self.rowHeight - PixelFont.rows) / 2,

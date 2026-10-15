@@ -781,7 +781,7 @@ final class PixelViewsTests: XCTestCase {
         let bar = TopBarView()
         bar.stats = AgentStats(states: [.working, .working, .done, .exited])
         let image = RenderedImage(bar, width: 620, height: TopBarView.height)
-        let buttons = Int(bar.projectButton.frame.minX)
+        let buttons = Int(bar.layoutButton.frame.minX)
         XCTAssertGreaterThan(buttons, 0)
         for color in [theme.ink, theme.green, theme.yellow, theme.red] {
             XCTAssertEqual(image.count(color, x: buttons - 10), 0)
@@ -862,7 +862,7 @@ final class PixelViewsTests: XCTestCase {
         XCTAssertFalse(meter.isCompact)
         XCTAssertEqual(meter.meter, bar.usage)
         XCTAssertEqual(Int(meter.frame.width), meter.fittingWidth(compact: false))
-        XCTAssertEqual(Int(meter.frame.maxX), Int(bar.projectButton.frame.minX) - 16)
+        XCTAssertEqual(Int(meter.frame.maxX), Int(bar.layoutButton.frame.minX) - 16)
         XCTAssertEqual(Int(meter.frame.minY), (46 - UsageMeterView.height) / 2)
         bar.usage = nil
         _ = RenderedImage(bar, width: 1360, height: TopBarView.height)
@@ -878,7 +878,7 @@ final class PixelViewsTests: XCTestCase {
             .map { PixelFont.textWidth($0, scale: 2) + 34 }.reduce(0, +) - 22
         // Largura em que o medidor inteiro cabe com a folga exata, e um pixel a menos.
         _ = RenderedImage(bar, width: 1360, height: TopBarView.height)
-        let right = 1360 - Int(bar.projectButton.frame.minX)
+        let right = 1360 - Int(bar.layoutButton.frame.minX)
         let full = statsRight + 16 + meter.fittingWidth(compact: false) + 16 + right
         _ = RenderedImage(bar, width: full, height: TopBarView.height)
         XCTAssertFalse(meter.isHidden)
@@ -903,7 +903,7 @@ final class PixelViewsTests: XCTestCase {
         bar.stats = AgentStats(states: [.working])
         bar.usage = usage([20, 85])
         _ = RenderedImage(bar, width: 1360, height: TopBarView.height)
-        let right = 1360 - Int(bar.projectButton.frame.minX)
+        let right = 1360 - Int(bar.layoutButton.frame.minX)
         let statsRight = firstStatX + ["AGENTS 1", "WORKING 1", "DONE 0", "IDLE 0"]
             .map { PixelFont.textWidth($0, scale: 2) + 34 }.reduce(0, +) - 22
         let width = statsRight + 16 + bar.usageView.fittingWidth(compact: false) + 16 + right
@@ -932,9 +932,10 @@ final class PixelViewsTests: XCTestCase {
         XCTAssertEqual(stats.idle, 1)
     }
 
-    func testProjectButtonHasAFixedTitle() {
-        // O projeto de cada agente está no cabeçalho dele; o botão só abre o menu.
-        XCTAssertEqual(TopBarView().projectButton.title, "PROJETO")
+    func testTopBarHasOnlyTheLayoutAndAddButtons() {
+        // O + AGENT já pergunta onde o agente abre: GLOBAL, um projeto ou uma pasta.
+        let bar = TopBarView()
+        XCTAssertEqual(bar.subviews.compactMap { ($0 as? PixelButton)?.title }, ["FOCO", "+ AGENT"])
     }
 
     // MARK: avisos

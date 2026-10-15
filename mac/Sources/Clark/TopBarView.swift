@@ -103,13 +103,13 @@ final class TopBarView: PixelView {
         }
     }
     let usageView = UsageMeterView()
-    let projectButton = PixelButton(title: "PROJETO", toolTip: "Abrir agente num projeto (⌘D)")
     let layoutButton = PixelButton(title: "FOCO", toolTip: "Alternar layout foco / grade (⌘L)")
-    let addButton = PixelButton(title: "+ AGENT", style: .primary, toolTip: "Novo agente (⌘N)")
+    let addButton = PixelButton(title: "+ AGENT", style: .primary, toolTip: "Novo agente (⌘N) ou num projeto (⌘D)")
+    private var buttons: [PixelButton] { [layoutButton, addButton] }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        [projectButton, layoutButton, addButton].forEach(addSubview)
+        buttons.forEach(addSubview)
         usageView.isHidden = true
         addSubview(usageView)
     }
@@ -119,7 +119,7 @@ final class TopBarView: PixelView {
 
     override var theme: Theme {
         didSet {
-            [projectButton, layoutButton, addButton].forEach { $0.theme = theme }
+            buttons.forEach { $0.theme = theme }
             usageView.theme = theme
         }
     }
@@ -144,14 +144,14 @@ final class TopBarView: PixelView {
     }
 
     private var buttonsLeft: Int {
-        Int(bounds.width) - 10 - [projectButton, layoutButton, addButton].map(\.fittingWidth).reduce(0, +) - 20
+        Int(bounds.width) - 10 - buttons.map(\.fittingWidth).reduce(0, +) - 10 * (buttons.count - 1)
     }
 
     override func layout() {
         super.layout()
         var x = buttonsLeft
         let y = (Self.contentHeight - PixelButton.barHeight) / 2
-        for button in [projectButton, layoutButton, addButton] {
+        for button in buttons {
             button.frame = NSRect(x: x, y: y, width: button.fittingWidth, height: PixelButton.barHeight)
             x += button.fittingWidth + 10
         }

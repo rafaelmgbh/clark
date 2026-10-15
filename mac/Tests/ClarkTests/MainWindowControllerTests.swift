@@ -87,7 +87,6 @@ final class MainWindowControllerTests: XCTestCase {
         controller.start(launch: fixture.launch(), options: options)
         XCTAssertEqual(controller.panes.map(\.directory), [project, project])
         XCTAssertEqual(controller.panes.map(\.project), ["App", "App"])
-        XCTAssertEqual(controller.topBar.projectButton.title, "PROJETO")
 
         controller.addAgents(1)
         XCTAssertEqual(controller.panes[2].directory, fixture.home, "a pasta da linha de comando não vira padrão")
@@ -180,7 +179,7 @@ final class MainWindowControllerTests: XCTestCase {
         controller.addAgents(1)
         XCTAssertEqual(controller.panes.count, ClarkConfig.maxAgents)
         XCTAssertEqual(controller.warnings.messages.last, "limite de 16 agentes: feche um para abrir outro",
-                       "o + AGENT e o menu PROJETO não ficam mudos no limite")
+                       "o + AGENT e o ⌘D não ficam mudos no limite")
         let item = NSMenuItem(title: "", action: #selector(MainWindowController.newAgent(_:)), keyEquivalent: "")
         XCTAssertFalse(controller.validateMenuItem(item))
         let sibling = NSMenuItem(title: "", action: #selector(MainWindowController.newSiblingAgent(_:)),
@@ -382,7 +381,6 @@ final class MainWindowControllerTests: XCTestCase {
         XCTAssertEqual(controller.panes.map(\.directory), [fixture.home, fixture.home, project, fixture.home],
                        "pasta que não existe cai na home; abrir num projeto não muda onde o próximo abre")
         XCTAssertEqual(controller.panes.map(\.project), ["GLOBAL", "GLOBAL", "Beta", "GLOBAL"])
-        XCTAssertEqual(controller.topBar.projectButton.title, "PROJETO")
     }
 
     func testNewAgentInTheSameFolder() {
@@ -1163,7 +1161,7 @@ final class MainWindowControllerTests: XCTestCase {
 
     // MARK: projetos
 
-    /// O menu PROJETO como texto: `>` marca um submenu, e os itens de dentro vêm recuados.
+    /// Um menu de projetos como texto: `>` marca um submenu, e os itens de dentro vêm recuados.
     private func outline(_ menu: NSMenu, indent: String = "") -> [String] {
         menu.items.flatMap { item -> [String] in
             if item.isSeparatorItem { return [indent + "-"] }
@@ -1172,12 +1170,14 @@ final class MainWindowControllerTests: XCTestCase {
         }
     }
 
-    /// Item achado pelos títulos, um por nível do menu.
+    /// Item achado pelos títulos, um por nível do menu. Antes do último título só vale linha com submenu:
+    /// o nome da empresa sobre os mais usados não é a linha da empresa.
     private func item(_ menu: NSMenu, _ titles: String...) -> NSMenuItem? {
         var current: NSMenu? = menu
         var found: NSMenuItem?
-        for title in titles {
-            found = current?.items.first { $0.title == title }
+        for (index, title) in titles.enumerated() {
+            let last = index == titles.count - 1
+            found = current?.items.first { $0.title == title && (last || $0.hasSubmenu) }
             current = found?.submenu
         }
         return found
@@ -1206,7 +1206,7 @@ final class MainWindowControllerTests: XCTestCase {
         let controller = fixture.started()
         let menu = controller.projectMenu()
         XCTAssertEqual(outline(menu), [
-            "GLOBAL", "-",
+            "Empresas",
             "ACME >",
             "  Api", "  Portal Web",
             "  Clientes >", "    Loja",
@@ -1214,32 +1214,45 @@ final class MainWindowControllerTests: XCTestCase {
             "  Outras pastas >", "    Clientes", "    Rascunhos",
             "  Pasta da empresa",
             "BETA",
-            "-", "Outra pasta…",
         ], "o projeto fundo fica no grupo da pasta em que está; empresa sem nada dentro abre direto")
+        XCTAssertTrue(menu.items[0].isSectionHeader, "o título do bloco não é uma escolha")
         XCTAssertEqual(item(menu, "ACME", "Api")?.toolTip, "~/Projetos/acme/api")
         XCTAssertEqual(item(menu, "ACME", "Clientes")?.toolTip, "~/Projetos/acme/clientes")
         XCTAssertEqual(item(menu, "ACME", "Clientes", "Loja")?.toolTip, "~/Projetos/acme/clientes/loja")
         XCTAssertEqual(item(menu, "ACME", "Pasta da empresa")?.toolTip, "~/Projetos/acme")
-        XCTAssertEqual(item(menu, "GLOBAL")?.toolTip, "~")
     }
 
-    func testProjectMenuWithoutCompaniesStillOffersGlobalAndAnotherFolder() {
+    func testProjectMenuWithoutCompaniesIsEmpty() {
         let controller = fixture.started()
-        XCTAssertEqual(outline(controller.projectMenu()), ["GLOBAL", "-", "Outra pasta…"])
+        XCTAssertEqual(outline(controller.projectMenu()), [])
     }
 
-    func testProjectMenuShowsEachFolderOfADeclaredCompany() {
+    func testClickingACompanyOpensAnAgentInItsFolder() throws {
+        repository("Projetos/acme/api")
+        let controller = fixture.started()
+        let acme = item(controller.projectMenu(), "ACME")
+        XCTAssertEqual(outline(try XCTUnwrap(acme?.submenu)), ["Api", "-", "Pasta da empresa"],
+                       "o cursor continua abrindo os projetos dela")
+        XCTAssertEqual(acme?.toolTip, "~/Projetos/acme")
+        choose(acme)
+        XCTAssertEqual(controller.panes.map(\.directory), [fixture.home + "/Projetos/acme"])
+        XCTAssertEqual(controller.panes.map(\.company.name), ["acme"])
+    }
+
+    func testProjectMenuShowsEachFolderOfADeclaredCompany() throws {
         repository("Projetos/acme/api")
         repository("trabalho/legado/antigo")
         fixture.temp.write(".config/clark/companies.json", """
         {"companies": [{"name": "ACME", "paths": ["~/Projetos/acme", "~/trabalho/legado"]}]}
         """)
         let controller = fixture.started()
-        XCTAssertEqual(outline(controller.projectMenu()), [
-            "GLOBAL", "-",
+        let menu = controller.projectMenu()
+        XCTAssertEqual(outline(menu), [
+            "Empresas",
             "ACME >", "  Antigo", "  Api", "  -", "  ~/Projetos/acme", "  ~/trabalho/legado",
-            "-", "Outra pasta…",
         ])
+        XCTAssertFalse(PixelMenu.hasOwnAction(try XCTUnwrap(item(menu, "ACME"))),
+                       "com duas pastas, o clique na empresa só abre os projetos")
     }
 
     func testChoosingAProjectOpensAnAgentThere() {
@@ -1250,7 +1263,6 @@ final class MainWindowControllerTests: XCTestCase {
         XCTAssertEqual(controller.panes.map(\.project), ["GLOBAL", "Api"])
         XCTAssertEqual(controller.panes[1].company.name, "acme")
         XCTAssertTrue(controller.mainPane === controller.panes[1], "o agente do projeto vira o principal")
-        XCTAssertEqual(controller.topBar.projectButton.title, "PROJETO")
 
         choose(item(controller.agentMenu(), "GLOBAL"))
         XCTAssertEqual(controller.panes.map(\.directory), [fixture.home, api, fixture.home],
@@ -1280,14 +1292,13 @@ final class MainWindowControllerTests: XCTestCase {
         let controller = fixture.started()
         let menu = controller.projectMenu()
         XCTAssertEqual(outline(menu), [
-            "GLOBAL", "-",
+            "Empresas",
             "ACME >",
             "  Api",
             "  Suite >", "    Suite", "    -", "    Nucleo",
             "  -",
             "  Worktrees >", "    Api 431",
             "  Pasta da empresa",
-            "-", "Outra pasta…",
         ], "a worktree não se passa por projeto, e o projeto que guarda projetos é um grupo só")
 
         choose(item(menu, "ACME", "Suite", "Suite"))
@@ -1302,7 +1313,7 @@ final class MainWindowControllerTests: XCTestCase {
         repository("Projetos/acme/api")
         let controller = fixture.started()
         choose(item(controller.projectMenu(), "ACME", "Api"))
-        choose(item(controller.projectMenu(), "GLOBAL"))
+        choose(item(controller.agentMenu(), "GLOBAL"))
         let pane = controller.panes[1]
         XCTAssertEqual(pane.directory, fixture.home)
         XCTAssertEqual(pane.company.name, CompanyResolver.fallbackName)
@@ -1333,7 +1344,7 @@ final class MainWindowControllerTests: XCTestCase {
     func testOpeningAProjectBeforeTheStartDoesNothing() {
         let api = repository("Projetos/acme/api")
         let controller = fixture.controller()
-        XCTAssertEqual(outline(controller.projectMenu()), ["GLOBAL", "-", "Outra pasta…"],
+        XCTAssertEqual(outline(controller.projectMenu()), [],
                        "sem o ambiente do shell ainda não há empresas para listar")
         controller.openAgent(in: api)
         controller.addAgents(1)
@@ -1362,12 +1373,11 @@ final class MainWindowControllerTests: XCTestCase {
         let controller = fixture.started()
         let menu = controller.projectMenu()
         XCTAssertEqual(outline(menu), [
-            "GLOBAL", "-",
+            "Empresas",
             "ACME LABS >", "  Api", "  -", "  Pasta da empresa",
             "BETA",
-            "-", "Outra pasta…",
         ])
-        XCTAssertNil(item(menu, "GLOBAL")?.image)
+        XCTAssertNil(item(controller.agentMenu(), "GLOBAL")?.image)
         XCTAssertNil(item(menu, "ACME LABS", "Api")?.image)
         XCTAssertNotNil(item(menu, "BETA")?.image, "a empresa que abre direto também tem a cor dela")
 
@@ -1377,26 +1387,27 @@ final class MainWindowControllerTests: XCTestCase {
         XCTAssertEqual(image.count(RGB(r: 1, g: 0, b: 1)), PixelMenuView.swatchSide * PixelMenuView.swatchSide)
     }
 
-    func testProjectButtonOpensThePixelMenuUnderIt() {
+    func testProjectShortcutOpensTheAgentMenuAlreadyInsideTheProjects() {
         repository("Projetos/acme/api")
         let controller = fixture.started(agents: 1)
         var shown: [NSPanel] = []
         controller.pixelMenu.present = { panel, _ in shown.append(panel) }
         controller.pixelMenu.bounds = { _ in NSRect(x: -50_000, y: -50_000, width: 100_000, height: 100_000) }
-        let button = controller.topBar.projectButton
-        button.onClick?()
+        controller.chooseProject(nil)
 
         XCTAssertTrue(controller.pixelMenu.isOpen)
-        XCTAssertEqual(shown.count, 1)
-        XCTAssertEqual(controller.pixelMenu.levels[0].view.items.map(\.title), ["GLOBAL", "", "ACME", "", "Outra pasta…"])
+        XCTAssertEqual(controller.pixelMenu.levels.map { $0.view.items.map(\.title) }, [
+            ["GLOBAL", "Projeto", "Digitar pasta…", "Outra pasta…"], ["Empresas", "ACME"],
+        ])
+        XCTAssertEqual(controller.pixelMenu.levels.map(\.view.highlighted), [1, 1], "o ⌘D já entra no Projeto")
+        let button = controller.topBar.addButton
         let anchor = try? XCTUnwrap(button.window).convertToScreen(button.convert(button.bounds, to: nil))
-        XCTAssertEqual(shown[0].frame.minX, anchor?.minX)
-        XCTAssertEqual(shown[0].frame.maxY, (anchor?.minY ?? 0) - PixelMenu.gap, "logo abaixo do botão")
+        XCTAssertEqual(shown[0].frame.minX, anchor?.minX, "o menu é o do + AGENT, sob ele")
 
-        controller.pixelMenu.hover(2, level: 0)
-        controller.pixelMenu.choose(0, level: 1)
+        controller.pixelMenu.keyDown(.right)
+        controller.pixelMenu.keyDown(.enter)
         XCTAssertFalse(controller.pixelMenu.isOpen)
-        XCTAssertEqual(controller.panes.map(\.project), ["GLOBAL", "Api"], "escolher no menu abre o agente no projeto")
+        XCTAssertEqual(controller.panes.map(\.project), ["GLOBAL", "Api"], "só com o teclado até o projeto")
     }
 
     func testShutdownClosesTheOpenProjectMenu() {
@@ -1415,23 +1426,26 @@ final class MainWindowControllerTests: XCTestCase {
         let controller = fixture.started()
         XCTAssertEqual(outline(controller.agentMenu()), [
             "GLOBAL",
-            "Projeto >", "  ACME >", "    Api", "    -", "    Pasta da empresa",
+            "Projeto >", "  Empresas", "  ACME >", "    Api", "    -", "    Pasta da empresa",
             "Digitar pasta…",
-        ], "o Projeto traz as empresas do menu PROJETO, sem o GLOBAL e a Outra pasta, que já estão aqui")
+            "Outra pasta…",
+        ], "o Projeto traz os mais usados e as empresas; a Outra pasta escolhe qualquer pasta no Finder")
         XCTAssertEqual(item(controller.agentMenu(), "GLOBAL")?.toolTip, "~")
+        XCTAssertEqual(item(controller.agentMenu(), "Outra pasta…")?.action,
+                       #selector(MainWindowController.chooseFolder(_:)))
     }
 
     func testAgentMenuWithoutProjectsHasNoProjectRow() {
         let controller = fixture.started()
-        XCTAssertEqual(outline(controller.agentMenu()), ["GLOBAL", "Digitar pasta…"])
+        XCTAssertEqual(outline(controller.agentMenu()), ["GLOBAL", "Digitar pasta…", "Outra pasta…"])
     }
 
     func testAgentMenuProjectRowStartsWithTheMostUsed() {
         let site = repository("Projetos/beta/site")
         used(2, in: site)
         let controller = fixture.started()
-        XCTAssertEqual(Array(outline(controller.agentMenu()).prefix(4)),
-                       ["GLOBAL", "Projeto >", "  Mais usados", "  beta › Site"])
+        XCTAssertEqual(Array(outline(controller.agentMenu()).prefix(5)),
+                       ["GLOBAL", "Projeto >", "  Mais usados", "  BETA", "  Site"])
     }
 
     func testGlobalInTheAgentMenuOpensAtHome() {
@@ -1460,13 +1474,14 @@ final class MainWindowControllerTests: XCTestCase {
 
         XCTAssertTrue(controller.pixelMenu.isOpen)
         XCTAssertEqual(controller.panes.count, 1, "o + AGENT pergunta antes de abrir")
-        XCTAssertEqual(controller.pixelMenu.levels[0].view.items.map(\.title), ["GLOBAL", "Projeto", "Digitar pasta…"])
+        XCTAssertEqual(controller.pixelMenu.levels[0].view.items.map(\.title),
+                       ["GLOBAL", "Projeto", "Digitar pasta…", "Outra pasta…"])
         let anchor = try? XCTUnwrap(button.window).convertToScreen(button.convert(button.bounds, to: nil))
         XCTAssertEqual(shown[0].frame.minX, anchor?.minX)
         XCTAssertEqual(shown[0].frame.maxY, (anchor?.minY ?? 0) - PixelMenu.gap, "logo abaixo do botão")
 
         controller.pixelMenu.hover(1, level: 0)
-        controller.pixelMenu.hover(0, level: 1)
+        controller.pixelMenu.hover(1, level: 1)
         controller.pixelMenu.choose(0, level: 2)
         XCTAssertFalse(controller.pixelMenu.isOpen)
         XCTAssertEqual(controller.panes.map(\.project), ["GLOBAL", "Api"])
@@ -1478,7 +1493,8 @@ final class MainWindowControllerTests: XCTestCase {
         controller.newAgent(nil)
         XCTAssertTrue(controller.pixelMenu.isOpen)
         XCTAssertEqual(controller.panes.count, 1, "o ⌘N pergunta como o + AGENT")
-        XCTAssertEqual(controller.pixelMenu.levels[0].view.items.map(\.title), ["GLOBAL", "Digitar pasta…"])
+        XCTAssertEqual(controller.pixelMenu.levels[0].view.items.map(\.title),
+                       ["GLOBAL", "Digitar pasta…", "Outra pasta…"])
     }
 
     func testTypedFolderOpensAnAgentThere() {
@@ -1547,21 +1563,39 @@ final class MainWindowControllerTests: XCTestCase {
         let controller = fixture.started()
         let menu = controller.projectMenu()
         XCTAssertEqual(outline(menu), [
-            "Mais usados", "beta › Site", "acme › Api", "-",
-            "GLOBAL", "-",
+            "Mais usados", "BETA", "Site", "ACME", "Api", "-",
+            "Empresas",
             "ACME >", "  Api", "  Portal", "  -", "  Pasta da empresa",
             "BETA >", "  Site", "  -", "  Pasta da empresa",
-            "-", "Outra pasta…",
         ], "o mais usado vem primeiro; o que nunca foi usado só aparece na empresa")
         XCTAssertTrue(menu.items[0].isSectionHeader, "o título do bloco não é uma escolha")
-        XCTAssertEqual(item(menu, "beta › Site")?.toolTip, "~/Projetos/beta/site")
+        XCTAssertEqual(item(menu, "Site")?.toolTip, "~/Projetos/beta/site")
+    }
+
+    func testSuggestionsAreGroupedUnderTheirCompany() {
+        let api = repository("Projetos/acme/api")
+        let portal = repository("Projetos/acme/portal")
+        let site = repository("Projetos/beta/site")
+        used(5, in: api)
+        used(4, in: site)
+        used(3, in: portal)
+        let controller = fixture.started()
+        let menu = controller.projectMenu()
+        XCTAssertEqual(Array(outline(menu).prefix(7)), ["Mais usados", "ACME", "Api", "Portal", "BETA", "Site", "-"],
+                       "a empresa do mais usado vem primeiro, com os projetos dela na ordem de uso")
+        let label = menu.items[1]
+        XCTAssertFalse(label.isEnabled, "o nome da empresa não é uma escolha")
+        XCTAssertNil(label.action)
+        XCTAssertNotNil(label.image, "o nome vem com o quadradinho da cor da empresa")
+        XCTAssertEqual(menu.items[2...3].map(\.indentationLevel), [1, 1], "os projetos ficam recuados sob ela")
+        XCTAssertEqual(menu.items[2].toolTip, "~/Projetos/acme/api")
     }
 
     func testChoosingASuggestionOpensAnAgentThere() {
         let api = repository("Projetos/acme/api")
         used(1, in: api)
         let controller = fixture.started()
-        choose(item(controller.projectMenu(), "acme › Api"))
+        choose(item(controller.projectMenu(), "Api"))
         XCTAssertEqual(controller.panes.map(\.directory), [api])
         XCTAssertEqual(controller.panes.map(\.project), ["Api"])
         XCTAssertEqual(controller.panes.map(\.company.name), ["acme"])
@@ -1575,8 +1609,8 @@ final class MainWindowControllerTests: XCTestCase {
         used(1, in: api)
         let controller = fixture.started()
         let menu = controller.projectMenu()
-        XCTAssertEqual(Array(outline(menu).prefix(4)), ["Mais usados", "acme › Api 431", "acme › Api", "-"])
-        choose(item(menu, "acme › Api 431"))
+        XCTAssertEqual(Array(outline(menu).prefix(5)), ["Mais usados", "ACME", "Api 431", "Api", "-"])
+        choose(item(menu, "Api 431"))
         XCTAssertEqual(controller.panes.map(\.directory), [chamado])
     }
 
@@ -1585,8 +1619,8 @@ final class MainWindowControllerTests: XCTestCase {
         used(9, in: fixture.home)
         let controller = fixture.started()
         XCTAssertEqual(outline(controller.projectMenu()), [
-            "GLOBAL", "-", "ACME >", "  Api", "  -", "  Pasta da empresa", "-", "Outra pasta…",
-        ], "o GLOBAL já é a primeira linha do menu: não entra na conta")
+            "Empresas", "ACME >", "  Api", "  -", "  Pasta da empresa",
+        ], "a home é o GLOBAL, uma linha acima no + AGENT: não entra na conta")
     }
 
     func testConversationsOlderThanTheWindowSuggestNothing() {
@@ -1595,7 +1629,7 @@ final class MainWindowControllerTests: XCTestCase {
         let controller = fixture.started()
         XCTAssertNil(item(controller.projectMenu(), MainWindowController.mostUsedTitle))
         used(1, in: api, age: 3600)
-        XCTAssertNotNil(item(controller.projectMenu(), "acme › Api"), "a conta é refeita a cada abertura do menu")
+        XCTAssertNotNil(item(controller.projectMenu(), "Api"), "a conta é refeita a cada abertura do menu")
     }
 
     func testSuggestionsCoverEverythingTheMenuOffers() {
@@ -1612,11 +1646,12 @@ final class MainWindowControllerTests: XCTestCase {
         used(1, in: notes)
         let controller = fixture.started(config: config)
         let menu = controller.projectMenu()
-        XCTAssertEqual(Array(outline(menu).prefix(7)), [
-            "Mais usados", "acme › Portal de Compras", "acme › Loja", "acme", "acme › Rascunhos", "Diário", "-",
+        XCTAssertEqual(Array(outline(menu).prefix(8)), [
+            "Mais usados", "ACME", "Portal de Compras", "Loja", "Pasta da empresa", "Rascunhos", "Diário", "-",
         ], "o apelido, o projeto fundo, a pasta da empresa, a pasta que não é projeto e a apelidada sem empresa")
-        XCTAssertEqual(item(menu, "acme")?.toolTip, "~/Projetos/acme")
-        choose(item(menu, "acme › Loja"))
+        XCTAssertEqual(item(menu, "Pasta da empresa")?.toolTip, "~/Projetos/acme")
+        XCTAssertEqual(item(menu, "Diário")?.indentationLevel, 0, "fora de toda empresa: sem nome em cima e sem recuo")
+        choose(item(menu, "Loja"))
         XCTAssertEqual(controller.panes.map(\.directory), [loja])
     }
 
@@ -1628,8 +1663,8 @@ final class MainWindowControllerTests: XCTestCase {
         """)
         used(1, in: fixture.home + "/trabalho/legado")
         let controller = fixture.started()
-        XCTAssertEqual(Array(outline(controller.projectMenu()).prefix(3)),
-                       ["Mais usados", "ACME › ~/trabalho/legado", "-"])
+        XCTAssertEqual(Array(outline(controller.projectMenu()).prefix(4)),
+                       ["Mais usados", "ACME", "~/trabalho/legado", "-"])
     }
 
     func testProjectReachedThroughALinkIsCountedWhereItReallyIs() {
@@ -1640,8 +1675,8 @@ final class MainWindowControllerTests: XCTestCase {
         used(2, in: real)
         let controller = fixture.started()
         let menu = controller.projectMenu()
-        XCTAssertEqual(Array(outline(menu).prefix(3)), ["Mais usados", "acme › Atalho", "-"])
-        XCTAssertEqual(item(menu, "acme › Atalho")?.representedObject as? String, fixture.home + "/Projetos/acme/atalho",
+        XCTAssertEqual(Array(outline(menu).prefix(4)), ["Mais usados", "ACME", "Atalho", "-"])
+        XCTAssertEqual(item(menu, "Atalho")?.representedObject as? String, fixture.home + "/Projetos/acme/atalho",
                        "abre pelo mesmo caminho da linha da empresa")
     }
 
@@ -1651,8 +1686,8 @@ final class MainWindowControllerTests: XCTestCase {
         }
         let controller = fixture.started()
         XCTAssertEqual(ProjectUsage.maxSuggestions, 5)
-        XCTAssertEqual(Array(outline(controller.projectMenu()).prefix(7)), [
-            "Mais usados", "acme › F", "acme › E", "acme › D", "acme › C", "acme › B", "-",
+        XCTAssertEqual(Array(outline(controller.projectMenu()).prefix(8)), [
+            "Mais usados", "ACME", "F", "E", "D", "C", "B", "-",
         ])
     }
 
@@ -1664,7 +1699,7 @@ final class MainWindowControllerTests: XCTestCase {
         var environment = fixture.environment
         environment["CLAUDE_CONFIG_DIR"] = fixture.home + "/outra-conta"
         let controller = fixture.started(environment: environment)
-        XCTAssertEqual(Array(outline(controller.projectMenu()).prefix(3)), ["Mais usados", "beta › Site", "-"])
+        XCTAssertEqual(Array(outline(controller.projectMenu()).prefix(4)), ["Mais usados", "BETA", "Site", "-"])
     }
 
     // MARK: apelidos
@@ -1686,9 +1721,8 @@ final class MainWindowControllerTests: XCTestCase {
                        ["Portal de Compras", "Portal de Compras", "GLOBAL"], "os cards acompanham")
         XCTAssertEqual(savedConfig().projectNames, [api: "Portal de Compras"], "o apelido é do repositório")
         XCTAssertEqual(outline(controller.projectMenu()), [
-            "GLOBAL", "-",
+            "Empresas",
             "ACME >", "  Portal de Compras", "  -", "  Pasta da empresa",
-            "-", "Outra pasta…",
         ], "o apelidado sobe para o topo da empresa e sai da lista comum")
         XCTAssertEqual(item(controller.projectMenu(), "ACME", "Portal de Compras")?.toolTip, "~/Projetos/acme/api")
     }
@@ -1760,10 +1794,9 @@ final class MainWindowControllerTests: XCTestCase {
         controller.applyNickname(controller.panes[0], text: "Diário")
         let menu = controller.projectMenu()
         XCTAssertEqual(outline(menu), [
-            "GLOBAL", "-",
+            "Empresas",
             "ACME >", "  Api", "  -", "  Pasta da empresa",
             "-", "Diário",
-            "-", "Outra pasta…",
         ])
         XCTAssertEqual(item(menu, "Diário")?.toolTip, "~/notas")
         let nickname = NSMenuItem(title: "", action: #selector(MainWindowController.nicknameProject(_:)),

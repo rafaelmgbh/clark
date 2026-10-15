@@ -27,7 +27,7 @@ struct AgentLaunch {
         resolver.resolve(canonicalPath: canonical(usableDirectory(directory)))
     }
 
-    /// Empresas e projetos que existem no disco agora, para o menu PROJETO.
+    /// Empresas e projetos que existem no disco agora, para a cascata `Projeto` do + AGENT.
     /// - Parameter nicknames: caminho -> apelido, como está no `config.json`.
     func projectGroups(nicknames: [String: String] = [:]) -> [ProjectGroup] {
         resolver.projectGroups(canonicalize: canonical, nicknames: nicknames)

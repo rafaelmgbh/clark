@@ -15,7 +15,8 @@ usa a tela, o teclado e a conta do `claude`. Nada aqui é automatizado.
 | Aviso de controle remoto (commit seguinte ao `9bdf093`) | 515 testes verdes, 26 mutações mortas, imagem renderizada nos testes, campo do arquivo de sessão conferido em sessões reais | nunca |
 | Cabeçalho em etiquetas, `Mais usados` no menu e links sublinhados (os três commits seguintes ao do aviso de controle remoto) | 580 testes verdes, 102 mutações mortas (30 do cabeçalho, 24 do menu, 48 dos links), imagens renderizadas nos testes, custo da leitura dos links medido no build otimizado | nunca |
 | Agente em segundo plano não dispara o aviso de agente pronto (correção do aviso falso) | 592 testes verdes, o aviso falso reproduzido em teste antes da correção, a correção ingênua (que atrasaria o aviso de verdade) morta por dois testes, `status` do arquivo de sessão conferido numa sessão real com agentes em segundo plano | nunca |
-| Menu `PROJETO` em cascata desenhado pelo app, com as empresas em maiúsculas e na cor delas (ainda sem commit) | 656 testes verdes, 16 de 17 mutações mortas (a que sobra é o repasse do tema ao menu: só existe o `dark`), imagem do menu renderizada com as pastas reais | nunca: o cursor, o teclado e o clique fora só foram exercitados nos testes |
+| Menu `PROJETO` em cascata desenhado pelo app, com as empresas em maiúsculas e na cor delas (`250850e`) | 656 testes verdes, 16 de 17 mutações mortas (a que sobra é o repasse do tema ao menu: só existe o `dark`), imagem do menu renderizada com as pastas reais | nunca: o cursor, o teclado e o clique fora só foram exercitados nos testes |
+| Botão `PROJETO` fora da barra: ⌘D abre o `+ AGENT` já na cascata `Projeto`, `Mais usados` agrupado por empresa e clique na empresa abrindo na pasta dela (commit seguinte ao `5d701c7`) | 714 testes verdes, inclusive o ⌘D até abrir o projeto pelo teclado e o recuo desenhado | nunca: B2, B2a, B2g e B6 |
 | Ícone do dragão (`7fa1ec6`) | coberto pelos testes | nunca |
 | Núcleo do M1 (`80cb7e8`) | coberto pelos testes | em uso, mas o roteiro da Task 15 do plano nunca foi rodado inteiro |
 | Atualização automática pelo `update.sh` (commit seguinte ao `a204bab`) | 695 testes verdes; `Tests/packaging.sh` verde nos 11 passos, inclusive compilar o HEAD e reinstalar numa HOME de mentira | nunca: o app fechando e reaberto pelo Dock (E3) |
@@ -63,7 +64,7 @@ a compilação com o diff: em 2026-10-11 o executável instalado era idêntico a
    O total é `+5 -2 4 ARQ`. O `/tmp/clark-limpo` é um repositório sem mudança e o `/tmp/clark-vazio`
    é uma pasta fora de repositório.
 
-3. No CLARK, abra um agente em cada pasta: ⌘D, `Outra pasta…`, e no seletor do macOS ⌘⇧G para
+3. No CLARK, abra um agente em cada pasta: ⌘N, `Outra pasta…`, e no seletor do macOS ⌘⇧G para
    digitar o caminho. Abra também um quarto agente em `/tmp/clark-diff/sub`.
 
 ## A. Diff
@@ -203,14 +204,16 @@ cd /tmp/clark-diff && git checkout -q -- b.txt && rm -f longo.txt bin.dat teste.
   agente na home, com duas etiquetas no cabeçalho, `GLOBAL` em cinza e `AGENT 1`. `! pwd` mostra a
   home.
 
-- [ ] **B2. Clique no botão `PROJETO`.** Clique no botão da barra, sem usar o ⌘D. Esperado: o menu
-  abre logo abaixo dele, sem demora, com `Mais usados` no topo, `GLOBAL`, as empresas e
-  `Outra pasta…`. O título do botão é sempre `PROJETO`.
+- [ ] **B2. ⌘D.** A barra tem só `FOCO` e `+ AGENT` à direita, sem `PROJETO`. Aperte ⌘D. Esperado:
+  sem demora, o menu do `+ AGENT` abre logo abaixo dele (`GLOBAL`, `Projeto`, `Digitar pasta…`,
+  `Outra pasta…`), com a cascata `Projeto` já aberta ao lado e a primeira linha dela destacada: dá
+  para seguir com ↓ e Enter sem tocar no mouse. A cascata traz `Mais usados` no topo, depois
+  `EMPRESAS` com uma linha por empresa.
 
 - [ ] **B2b. Cara do menu.** Com o menu aberto, olhe o desenho. Esperado: fundo escuro com moldura e
-  sombra dura, a mesma letra dos botões; `MAIS USADOS` em letra pequena e cinza; as empresas em
-  maiúsculas, cada uma com um quadradinho na cor dela (a mesma da etiqueta no cabeçalho dos agentes)
-  e um `>` na ponta; a linha sob o cursor fica mais clara, com uma barra laranja à esquerda. Nada do
+  sombra dura, a mesma letra dos botões; `MAIS USADOS` e `EMPRESAS` em letra pequena e cinza; as
+  empresas em maiúsculas, cada uma com um quadradinho na cor dela (a mesma da etiqueta no cabeçalho
+  dos agentes) e um `>` na ponta; a linha sob o cursor fica mais clara, com uma barra laranja à esquerda. Nada do
   menu cinza do macOS.
 
 - [ ] **B2c. Cascata com o cursor.** Pare o cursor numa empresa. Esperado: o submenu abre ao lado,
@@ -220,26 +223,37 @@ cd /tmp/clark-diff && git checkout -q -- b.txt && rm -f longo.txt bin.dat teste.
   (`Worktrees`, `Outras pastas` ou uma pasta com projetos): abre o terceiro nível.
 
 - [ ] **B2d. Teclado.** Abra o menu com ⌘D e não toque no mouse. Esperado: ↓ e ↑ andam pelas linhas,
-  pulando o título e os traços, e dão a volta no fim; → ou Enter numa empresa entra no submenu, com
-  a primeira linha destacada; ← volta para a empresa; Enter num projeto abre o agente e fecha o
-  menu; Esc fecha tudo. Digite letras com o menu aberto: nada chega ao terminal.
+  pulando os títulos, os nomes de empresa dos `Mais usados` e os traços, e dão a volta no fim; →
+  numa empresa entra no submenu, com a primeira linha destacada; ← volta para a empresa, e outro ←
+  volta para `Projeto`; Enter num projeto abre o agente e fecha o menu; Enter numa empresa abre o
+  agente na pasta dela (B2g); Esc fecha tudo. Digite letras com o menu aberto: nada chega ao
+  terminal.
 
 - [ ] **B2e. Fechar sem escolher.** Abra o menu e clique no terminal. Esperado: o menu fecha e o
-  clique não seleciona texto nem troca de agente. Abra de novo e clique no próprio botão `PROJETO`:
+  clique não seleciona texto nem troca de agente. Abra de novo e clique no próprio botão `+ AGENT`:
   fecha, sem reabrir. Abra e aperte ⌘D: fecha. Abra e troque de app com ⌘Tab: ao voltar, o menu não
   está mais lá. Em todos os casos o foco continua no terminal: dá para digitar em seguida.
 
-- [ ] **B2f. Bordas da tela.** Arraste a janela do CLARK até o botão `PROJETO` ficar perto da borda
+- [ ] **B2f. Bordas da tela.** Arraste a janela do CLARK até o botão `+ AGENT` ficar perto da borda
   direita da tela e abra uma empresa. Esperado: o submenu abre à esquerda do menu, inteiro na tela.
   Com a janela baixa na tela, abra a empresa com mais projetos: o submenu sobe para caber e, se ainda
   assim não couber, rola com a roda do mouse ou com ↓, mostrando uma seta laranja no canto de onde
   há mais linhas.
 
-- [ ] **B2a. Mais usados.** No topo do menu, confira o bloco `Mais usados`. Esperado: até cinco
-  linhas no formato `Empresa › Projeto`, e as primeiras são as pastas em que você mais usou o
-  Claude Code no último mês, dentro ou fora do CLARK; o `GLOBAL` não está entre elas; passar o
-  mouse mostra o caminho. Escolha uma: abre um agente naquela pasta, igual a escolher pelo submenu
-  da empresa. O título `Mais usados` não é clicável.
+- [ ] **B2a. Mais usados.** No topo da cascata, confira o bloco `Mais usados`. Esperado: até cinco
+  pastas em que você mais usou o Claude Code no último mês, dentro ou fora do CLARK, juntas sob o
+  nome da empresa: uma linha apagada, em maiúsculas e com o quadradinho da cor dela, e os projetos
+  embaixo, um pouco para a direita, só com o nome (`Natutec`, sem `N1 Labs ›`). A empresa da pasta
+  mais usada vem primeiro. A pasta da própria empresa aparece como `Pasta da empresa`. A home não
+  está entre elas; passar o mouse num projeto mostra o caminho. Clique no nome da empresa: nada
+  acontece. Escolha um projeto: abre um agente naquela pasta, igual a escolher pelo submenu da
+  empresa. O título `Mais usados` não é clicável.
+
+- [ ] **B2g. Clique na empresa.** Em `EMPRESAS`, clique numa empresa (`N1 LABS`, `SULIVAM`), sem
+  esperar o submenu. Esperado: o menu fecha e abre um agente na pasta da empresa; `! pwd` mostra a
+  pasta dela. Passar o mouse na
+  linha mostra o caminho e abre o submenu ao lado, como antes. Uma empresa com mais de uma pasta no
+  `companies.json` só abre o submenu, sem agente.
 
 - [ ] **B3. Submenu da empresa.** Abra uma empresa com vários projetos. Esperado, de cima para
   baixo: os apelidados; os projetos do primeiro nível e um submenu para cada pasta que guarda
@@ -259,25 +273,26 @@ cd /tmp/clark-diff && git checkout -q -- b.txt && rm -f longo.txt bin.dat teste.
 
 - [ ] **B4. Abrir num projeto.** Escolha um projeto. Esperado: abre um agente novo naquela pasta, com
   três etiquetas no cabeçalho, nesta ordem: a empresa na cor dela, o projeto e o nome do agente
-  (`EMPRESA` `MEU PROJETO` `AGENT 2`), com a cara dos botões `PROJETO` e `FOCO`. O card da
+  (`EMPRESA` `MEU PROJETO` `AGENT 2`), com a cara dos botões `FOCO` e `+ AGENT`. O card da
   lista lateral traz o projeto numa linha própria. Rode `! pwd` para conferir a pasta.
 
 - [ ] **B5. O `claude` enxerga o projeto.** No agente aberto no B4, rode `/memory`. Esperado: o
   `CLAUDE.md` (ou `AGENTS.md`) listado é o daquele projeto.
 
 - [ ] **B6. ⌘N e ⌘⇧N.** Com o agente do B4 em foco, ⌘N abre sob o `+ AGENT` o menu `GLOBAL`,
-  `Projeto`, `Digitar pasta…`; `GLOBAL` abre na home, e ⌘⇧N abre outro na pasta do agente em foco.
+  `Projeto`, `Digitar pasta…`, `Outra pasta…`, sem nenhuma cascata aberta; `GLOBAL` abre na home,
+  `Outra pasta…` abre o seletor de pastas do macOS, e ⌘⇧N abre outro na pasta do agente em foco.
   O botão direito no cabeçalho tem o mesmo `Novo agente nesta pasta`.
 
 - [ ] **B6a. + AGENT.** Clique no `+ AGENT`: o mesmo menu do ⌘N, logo abaixo do botão, sem abrir
-  agente ainda. `Projeto` em cascata mostra `Mais usados` e as empresas do menu `PROJETO`;
+  agente ainda. `Projeto` em cascata mostra `Mais usados` e as empresas, como no ⌘D;
   escolher um projeto abre o agente nele. `Digitar pasta…` mostra um campo sob o botão:
   `~/Projetos/Sulivam/larys` + Enter abre lá; com um agente em foco num repo, `docs` + Enter abre a
   subpasta dele; uma pasta que não existe só dá o aviso; Esc ou clicar fora fecha sem abrir.
 
 - [ ] **B7. Apelidar.** Botão direito no cabeçalho do agente do B4, `Apelidar projeto…`, digite um
-  nome e Enter. Esperado: o cabeçalho e o card de todos os agentes daquele projeto trocam na hora; no
-  menu `PROJETO`, o apelido aparece no topo do submenu da empresa. Abra um agente numa subpasta do
+  nome e Enter. Esperado: o cabeçalho e o card de todos os agentes daquele projeto trocam na hora; na
+  cascata `Projeto`, o apelido aparece no topo do submenu da empresa. Abra um agente numa subpasta do
   mesmo repositório (`Outra pasta…`): ele mostra o mesmo apelido.
 
 - [ ] **B8. O apelido fica.** ⌘Q e abra de novo. Esperado: o apelido continua no cabeçalho e no menu.
@@ -337,7 +352,7 @@ com 17 passos. Nenhum deles foi registrado como rodado. Os que mais pesam, por o
 Estes passos pedem o [AiUsageBar](https://github.com/rafaelmgbh/ai-usage-bar) rodando no mesmo Mac.
 
 - [ ] **D1. Medidor na barra.** Com a janela larga, olhe a barra superior. Esperado: entre as
-  contagens e o botão `PROJETO`, `5H` e `7D`, cada um com uma barra de dez blocos e o percentual.
+  contagens e o botão `FOCO`, `5H` e `7D`, cada um com uma barra de dez blocos e o percentual.
   Os números batem com o que o AiUsageBar mostra, com no máximo um minuto de atraso.
 
 - [ ] **D2. Dica.** Pare o mouse sobre o medidor. Esperado: o percentual de cada janela com
@@ -467,6 +482,9 @@ E no que veio depois, também sem consulta:
   as etiquetas não clicam.
 - No menu `PROJETO`: `Mais usados` conta as conversas que o Claude Code guarda de cada pasta nos
   últimos 30 dias, e não o que foi aberto pelo CLARK; cinco linhas; o `GLOBAL` fica de fora.
+  (Depois: o botão `PROJETO` saiu da barra e o menu virou a cascata `Projeto` do `+ AGENT`, que o
+  ⌘D abre já aberta; `Mais usados` agrupado sob o nome da empresa; clicar na empresa abre na pasta
+  dela.)
 - No aviso de controle remoto: a palavra `REMOTO` em azul, no cabeçalho e no card; sem clique e
   sem o endereço da sessão; no cabeçalho apertado o resumo do diff sai antes dela.
 

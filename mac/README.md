@@ -93,26 +93,31 @@ nome do agente é cortado, pelo começo: o fim é o que distingue `AGENT 1` de `
 lista lateral traz o nome, o projeto numa linha própria, na cor da empresa, e a empresa em cinza.
 
 O CLARK começa no `GLOBAL`: um agente na home, para o que não é de projeto nenhum. O ⌘N e o
-`+ AGENT` perguntam onde o agente abre, num menu sob o botão: `GLOBAL`, `Projeto`, com os mesmos
-projetos do menu `PROJETO`, ou `Digitar pasta…`, um campo que aceita `~` e caminho relativo à pasta
-do agente em foco, e abre com Enter. O botão `PROJETO` da barra (⌘D) continua abrindo direto no projeto.
+`+ AGENT` perguntam onde o agente abre, num menu sob o botão: `GLOBAL`, que abre na home;
+`Projeto`, a cascata dos projetos; `Digitar pasta…`, um campo que aceita `~` e caminho relativo à
+pasta do agente em foco, e abre com Enter; e `Outra pasta…`, o seletor de pastas do macOS. O ⌘D
+abre o mesmo menu já dentro de `Projeto`, com a primeira linha destacada para as setas.
 
 O menu é desenhado pelo próprio CLARK, com a cara do resto do app, e abre em cascata: parar o cursor
-numa linha com `>` abre o submenu ao lado, sem clique. Pelo teclado, ↑ e ↓ trocam de linha, → ou
-Enter entram no submenu, ← volta um nível, Enter escolhe e Esc fecha. Clicar fora, trocar de app ou
-apertar ⌘D de novo fecha sem escolher nada. Enquanto o menu está aberto, o que você digita não chega
-ao terminal. O submenu que não cabe à direita abre à esquerda, e a lista mais alta que a tela rola,
-com uma seta no canto de onde ainda há linhas. De cima para baixo, o menu traz:
+numa linha com `>` abre o submenu ao lado, sem clique. Pelo teclado, ↑ e ↓ trocam de linha, → entra
+no submenu, ← volta um nível, Enter escolhe e Esc fecha; numa linha que só abre submenu, o Enter
+também entra nele. Clicar fora, trocar de app ou apertar ⌘D de novo fecha sem escolher nada.
+Enquanto o menu está aberto, o que você digita não chega ao terminal. O submenu que não cabe à
+direita abre à esquerda, e a lista mais alta que a tela rola, com uma seta no canto de onde ainda há
+linhas. De cima para baixo, a cascata `Projeto` traz:
 
 - `Mais usados`, no topo, traz até cinco pastas em que o Claude Code mais foi usado nos últimos 30
-  dias: a mais usada primeiro e, no empate, a usada por último. A conta sai das conversas que o
-  Claude Code guarda de cada pasta, sem chamar modelo nenhum, e vale também para o que foi aberto
-  fora do CLARK. Entra tudo o que o menu oferece nas empresas e as pastas apelidadas; o projeto vem
-  com a empresa na frente (`Acme › Api`). O `GLOBAL` não entra na conta, e sem conversa nenhuma o
-  bloco não aparece.
-- `GLOBAL` abre um agente na home.
-- Cada empresa vem em maiúsculas, com um quadradinho na cor dela, e é um submenu com os projetos
-  dela. Escolher um abre um agente na pasta do projeto.
+  dias. A conta sai das conversas que o Claude Code guarda de cada pasta, sem chamar modelo nenhum,
+  e vale também para o que foi aberto fora do CLARK. Entra tudo o que a cascata oferece nas
+  empresas e as pastas apelidadas. Os projetos vêm recuados sob o nome da empresa, apagado e com o
+  quadradinho da cor dela, que não é uma escolha: a empresa do mais usado vem primeiro e, dentro
+  dela, a pasta mais usada primeiro e, no empate, a usada por último. A pasta da própria empresa
+  aparece como `Pasta da empresa`, e a apelidada fora de toda empresa vem no fim, sem nome em cima.
+  A home não entra na conta, e sem conversa nenhuma o bloco não aparece.
+- `Empresas`: cada empresa vem em maiúsculas, com um quadradinho na cor dela. Clicar na linha (ou
+  Enter nela) abre um agente na pasta da empresa, vendo todos os projetos dela; parar o cursor (ou →)
+  abre o submenu com os projetos, e escolher um abre o agente direto na pasta do projeto. A empresa
+  com mais de uma pasta no `companies.json` só abre o submenu.
 - Projeto é a pasta com repositório git ou com instruções para agente (`CLAUDE.md`, `AGENTS.md`,
   `.claude`), até quatro níveis abaixo da pasta da empresa. Os do primeiro nível vêm soltos. Os mais
   fundos ficam num submenu com o nome da pasta que os guarda (`Vendas ▸`). Pasta que só organiza
@@ -125,7 +130,6 @@ com uma seta no canto de onde ainda há linhas. De cima para baixo, o menu traz:
 - `Outras pastas` junta as pastas do primeiro nível que não são projeto, e `Pasta da empresa` abre
   na pasta da própria empresa.
 - A empresa que é ela mesma um repositório, ou que não tem nada dentro, abre direto, sem submenu.
-- `Outra pasta…` abre o seletor de pastas do macOS.
 
 O ⌘⇧N (`Novo agente nesta pasta`, também no botão direito do cabeçalho) abre outro agente na pasta
 do agente em foco. Com os 16 agentes abertos, nada abre e a barra avisa.
@@ -199,7 +203,7 @@ horas de renovação. Vale a conta padrão do Claude Code; sem ela no arquivo, a
 |--------|------|
 | ⌘N | Novo agente: `GLOBAL`, um projeto ou uma pasta digitada |
 | ⌘⇧N | Novo agente na pasta do agente em foco |
-| ⌘D | Abrir um agente num projeto |
+| ⌘D | Novo agente num projeto: o menu do `+ AGENT` já em `Projeto` |
 | ⌘⇧D | Ver o diff do agente em foco |
 | ⌘R | Reler o diff de todos os agentes |
 | ⌘W | Fechar o agente em foco |

@@ -6,7 +6,7 @@ public enum ProjectUsage {
     /// Conversa parada há mais tempo que isto não conta. É o prazo em que o Claude Code apaga as
     /// conversas por padrão: quem guarda por mais tempo não fica com um projeto antigo no topo para sempre.
     public static let window: TimeInterval = 30 * 24 * 60 * 60
-    /// Quantos projetos o menu PROJETO sugere.
+    /// Quantos projetos a cascata `Projeto` sugere.
     public static let maxSuggestions = 5
 
     public struct Count: Equatable, Sendable {
