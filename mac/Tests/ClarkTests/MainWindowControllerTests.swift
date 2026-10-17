@@ -1441,6 +1441,51 @@ final class MainWindowControllerTests: XCTestCase {
                        "sem o codex instalado, o submenu Codex não aparece")
     }
 
+    // MARK: novo contexto
+
+    private let echoInput = "while read line; do echo \"RECEBI $line\"; done"
+
+    func testNewContextTypesClearIntoTheSameProcessWhenTheAgentIsStopped() {
+        let controller = fixture.started(agents: 1, claude: fixture.fakeClaude(echoInput))
+        let pane = controller.panes[0]
+        XCTAssertFalse(pane.canResetContext, "no BOOT o claude ainda não ouve")
+        XCTAssertFalse(pane.resetContext())
+        fixture.now += 5
+        controller.tick()
+        XCTAssertEqual(pane.state, .idle)
+        XCTAssertTrue(pane.canResetContext)
+        let pid = pane.terminal.process.shellPid
+        controller.resetContext(nil)
+        XCTAssertTrue(waitUntil { self.lines(pane).contains("RECEBI /clear") }, "\(lines(pane))")
+        XCTAssertTrue(pane.terminal.process.running)
+        XCTAssertEqual(pane.terminal.process.shellPid, pid, "o processo segue o mesmo")
+    }
+
+    func testNewContextWaitsWhileTheAgentWorks() {
+        let controller = fixture.started(agents: 1, claude: fixture.fakeClaude(echoInput))
+        let pane = controller.panes[0]
+        fixture.now += 5
+        controller.tick()
+        pane.terminal.onUserInput?()
+        fixture.now += 1
+        pane.terminal.onOutput?()
+        controller.tick()
+        XCTAssertEqual(pane.state, .working)
+        XCTAssertFalse(pane.canResetContext)
+        XCTAssertFalse(pane.resetContext(), "digitar no meio do turno viraria pedido")
+    }
+
+    func testNewContextInCodexTypesNew() {
+        var config = ClarkConfig()
+        config.agents = [SavedAgent(name: "CODEX 1", cwd: fixture.home, sessionID: nil, tone: 0, tool: .codex)]
+        let controller = fixture.started(config: config, codex: fixture.fakeCodex(echoInput))
+        let pane = controller.panes[0]
+        fixture.now += 5
+        controller.tick()
+        XCTAssertTrue(pane.resetContext())
+        XCTAssertTrue(waitUntil { self.lines(pane).contains("RECEBI /new") }, "\(lines(pane))")
+    }
+
     // MARK: Codex
 
     func testCodexSubmenuOffersTheSamePlaces() {
@@ -2020,7 +2065,7 @@ final class MainWindowControllerTests: XCTestCase {
         let expected = ["newAgent:", "newSiblingAgent:", "chooseProject:", "closeAgent:", "closeAllAgents:",
                         "toggleLayout:", "toggleZoom:", "increaseFont:", "decreaseFont:", "resetFont:",
                         "previousAgent:", "nextAgent:", "renameAgent:", "nicknameProject:", "showDiff:",
-                        "refreshDiff:", "selectAgentByNumber:", "copyLines:"]
+                        "refreshDiff:", "selectAgentByNumber:", "copyLines:", "resetContext:"]
         let actions = Set(leaves.compactMap(\.action).map(NSStringFromSelector))
         for name in expected {
             XCTAssertTrue(actions.contains(name), "falta no menu: \(name)")

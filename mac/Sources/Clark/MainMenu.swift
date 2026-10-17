@@ -32,7 +32,7 @@ enum MainMenu {
         plainPlus.isHidden = true
         plainPlus.allowsKeyEquivalentWhenHidden = true
         main.addItem(submenu("Visualizar", [
-            item("Alternar foco e grade", #selector(MainWindowController.toggleLayout(_:)), "l"),
+            item("Alternar foco e grade", #selector(MainWindowController.toggleLayout(_:)), ""),
             item("Zoom no agente", #selector(MainWindowController.toggleZoom(_:)), "\r"),
             .separator(),
             item("Aumentar a fonte", #selector(MainWindowController.increaseFont(_:)), "+"),
@@ -43,6 +43,7 @@ enum MainMenu {
         var agents: [NSMenuItem] = [
             item("Agente anterior", #selector(MainWindowController.previousAgent(_:)), "{"),
             item("Próximo agente", #selector(MainWindowController.nextAgent(_:)), "}"),
+            item("Novo contexto", #selector(MainWindowController.resetContext(_:)), "l"),
             item("Renomear…", #selector(MainWindowController.renameAgent(_:)), ""),
             item("Apelidar projeto…", #selector(MainWindowController.nicknameProject(_:)), ""),
             .separator(),

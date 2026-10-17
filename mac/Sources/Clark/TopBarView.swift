@@ -103,7 +103,7 @@ final class TopBarView: PixelView {
         }
     }
     let usageView = UsageMeterView()
-    let layoutButton = PixelButton(title: "FOCO", toolTip: "Alternar layout foco / grade (⌘L)")
+    let layoutButton = PixelButton(title: "FOCO", toolTip: "Alternar layout foco / grade")
     let addButton = PixelButton(title: "+ AGENT", style: .primary, toolTip: "Novo agente (⌘N) ou num projeto (⌘D)")
     private var buttons: [PixelButton] { [layoutButton, addButton] }
 

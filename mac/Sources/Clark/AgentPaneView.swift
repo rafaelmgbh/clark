@@ -139,6 +139,7 @@ final class AgentPaneView: PixelView {
     let changedFiles = ChangedFilesView()
     /// A coluna dos arquivos alterados foi pedida. Num painel estreito ela fica escondida até caber.
     private(set) var showsChangedFiles = false
+    private let resetButton = PixelButton(title: "NOVO", style: .mini, toolTip: AgentPaneView.resetTip)
     private let zoomButton = PixelButton(title: "[ ]", style: .mini, toolTip: "Zoom (⌘↩)")
     private let closeButton = PixelButton(title: "X", style: .miniClose, toolTip: "Fechar (⌘W)")
     private let launch: AgentLaunch
@@ -208,6 +209,7 @@ final class AgentPaneView: PixelView {
         header.onDoubleClick = { [weak self] in self.map { $0.delegate?.paneRequestsRename($0) } }
         header.onBadgeClick = { [weak self] in self?.toggleChangedFiles() }
         header.menuProvider = { [weak self] in self?.contextMenu() }
+        resetButton.onClick = { [weak self] in self?.resetContext() }
         zoomButton.onClick = { [weak self] in self.map { $0.delegate?.paneRequestsZoom($0) } }
         closeButton.onClick = { [weak self] in self.map { $0.delegate?.paneRequestsClose($0) } }
         diff.onChange = { [weak self] in self?.changed() }
@@ -222,6 +224,7 @@ final class AgentPaneView: PixelView {
             self.map { $0.delegate?.paneRequestsDiff($0, path: file.path) }
         }
         addSubview(header)
+        addSubview(resetButton)
         addSubview(zoomButton)
         addSubview(closeButton)
         addSubview(digestView)
@@ -437,6 +440,30 @@ final class AgentPaneView: PixelView {
         delegate?.paneSessionDidChange(self)
     }
 
+    // MARK: novo contexto
+
+    static let resetTip = "Novo contexto (⌘L): a conversa recomeça, o processo segue"
+    static let resetBusyTip = "Novo contexto (⌘L): espere o turno e os comandos em segundo plano terminarem"
+
+    /// Só com o agente parado: digitar no meio de um turno viraria pedido, e o que roda em segundo
+    /// plano não pode ser interrompido.
+    var canResetContext: Bool {
+        (machine.state == .idle || machine.state == .done) && !machine.hasBackgroundShell
+            && !machine.isSessionBusy && launch.executable(for: tool) != nil && !terminal.hasExited
+    }
+
+    /// Botão NOVO e ⌘L: o próprio programa começa uma conversa nova no mesmo processo. A troca de
+    /// conversa é seguida como a de um `/clear` digitado.
+    @discardableResult
+    func resetContext() -> Bool {
+        guard canResetContext else { return false }
+        terminal.send(txt: tool == .codex ? "/new\r" : "/clear\r")
+        // O Codex não diz para qual conversa foi: ela é procurada de novo na pasta.
+        if tool == .codex { codexSession = nil; spawnedAt = Date().timeIntervalSince1970 }
+        dismissDigest()
+        return true
+    }
+
     /// O painel ganhou o foco do teclado.
     func focused() {
         let before = machine.state
@@ -545,6 +572,7 @@ final class AgentPaneView: PixelView {
         header.theme = appearance.theme
         digestView.theme = appearance.theme
         changedFiles.theme = appearance.theme
+        resetButton.theme = appearance.theme
         zoomButton.theme = appearance.theme
         closeButton.theme = appearance.theme
         terminal.apply(appearance)
@@ -554,6 +582,8 @@ final class AgentPaneView: PixelView {
         // O agente parou de trabalhar: é a hora em que os arquivos acabaram de mudar.
         if reportedState == .working && machine.state != .working { diff.refresh() }
         reportedState = machine.state
+        resetButton.isEnabled = canResetContext
+        resetButton.toolTip = canResetContext ? Self.resetTip : Self.resetBusyTip
         header.snapshot = snapshot
         changedFiles.state = diff.state
         needsDisplay = true
@@ -630,8 +660,12 @@ final class AgentPaneView: PixelView {
         let width = Int(bounds.width), height = Int(bounds.height)
         let border = Self.border
         let zoomWidth = zoomButton.fittingWidth, closeWidth = closeButton.fittingWidth
-        header.frame = NSRect(x: border, y: border, width: max(0, width - 2 * border - zoomWidth - closeWidth),
+        let resetWidth = resetButton.fittingWidth
+        header.frame = NSRect(x: border, y: border,
+                              width: max(0, width - 2 * border - resetWidth - zoomWidth - closeWidth),
                               height: AgentHeaderView.height)
+        resetButton.frame = NSRect(x: width - border - closeWidth - zoomWidth - resetWidth, y: border,
+                                   width: resetWidth, height: AgentHeaderView.height)
         zoomButton.frame = NSRect(x: width - border - closeWidth - zoomWidth, y: border, width: zoomWidth,
                                   height: AgentHeaderView.height)
         closeButton.frame = NSRect(x: width - border - closeWidth, y: border, width: closeWidth,

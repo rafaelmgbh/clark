@@ -18,6 +18,8 @@ final class PixelButton: PixelView {
 
     var title: String { didSet { needsDisplay = true } }
     var onClick: (() -> Void)?
+    /// Desligado, o botão fica apagado e o clique não faz nada.
+    var isEnabled = true { didSet { if isEnabled != oldValue { needsDisplay = true } } }
     let style: Style
     private(set) var isHovering = false
     private(set) var isPressed = false
@@ -61,7 +63,7 @@ final class PixelButton: PixelView {
         let inside = bounds.contains(convert(event.locationInWindow, from: nil))
         let wasPressed = isPressed
         setState(hovering: inside, pressed: false)
-        if inside && wasPressed { onClick?() }
+        if inside && wasPressed && isEnabled { onClick?() }
     }
 
     private func setState(hovering: Bool, pressed: Bool) {
@@ -91,8 +93,8 @@ final class PixelButton: PixelView {
     }
 
     private func renderMini(_ context: CGContext, width: Int, height: Int) {
-        var face = theme.bg2, ink = theme.dim
-        if isHovering {
+        var face = theme.bg2, ink = isEnabled ? theme.dim : theme.bg4
+        if isHovering && isEnabled {
             face = style == .miniClose ? theme.red : theme.bg3
             ink = style == .miniClose ? theme.onAccent : theme.ink
         }

@@ -950,6 +950,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     /// ⇧⌘C: numera as linhas do terminal do agente atual para escolher e copiar pelo teclado.
+    /// ⌘L: conversa nova no agente em foco, sem parar o processo.
+    @objc func resetContext(_ sender: Any?) {
+        if currentPane?.resetContext() != true { NSSound.beep() }
+    }
+
     @objc func copyLines(_ sender: Any?) {
         if currentPane?.terminal.beginLineSelection() != true { NSSound.beep() }
     }
@@ -1045,6 +1050,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             return launch != nil
         case #selector(copyLines(_:)):
             return currentPane != nil
+        case #selector(resetContext(_:)):
+            return currentPane?.canResetContext == true
         case #selector(closeAllAgents(_:)), #selector(toggleZoom(_:)), #selector(renameAgent(_:)),
              #selector(showDiff(_:)), #selector(refreshDiff(_:)):
             return !panes.isEmpty

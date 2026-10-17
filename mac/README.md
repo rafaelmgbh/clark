@@ -207,13 +207,16 @@ horas de renovação. Vale a conta padrão do Claude Code; sem ela no arquivo, a
 | ⌘⇧D | Ver o diff do agente em foco |
 | ⌘R | Reler o diff de todos os agentes |
 | ⌘W | Fechar o agente em foco |
-| ⌘L | Alternar entre foco e grade |
+| ⌘L | Novo contexto: o agente parado começa conversa nova (`/clear` no Claude, `/new` no Codex) |
+| ⌘⇧C | Numerar as linhas do terminal e copiar a escolhida |
 | ⌘↩ | Zoom no agente |
 | ⌘1 a ⌘9 | Ir para o agente pelo número |
 | ⌘{ e ⌘} | Agente anterior e próximo |
 | ⌘+, ⌘- e ⌘0 | Tamanho da fonte |
 
-Dois cliques no cabeçalho do agente renomeiam. O botão `[ ]` do cabeçalho dá zoom e o `x` fecha.
+Dois cliques no cabeçalho do agente renomeiam. O botão `[ ]` do cabeçalho dá zoom e o `x` fecha. O `NOVO`
+faz o mesmo que o ⌘L e fica apagado enquanto o agente trabalha ou tem comando em segundo plano: nada
+que está rodando é interrompido. O botão `FOCO` da barra alterna entre foco e grade.
 
 No terminal, ⌘-clique num endereço `http` ou `https` abre o navegador. Esses endereços aparecem
 sublinhados em azul. O que não tem sublinhado (caminho de arquivo, `file:`, `ssh:`) o clique não
