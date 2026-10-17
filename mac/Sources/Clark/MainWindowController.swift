@@ -26,6 +26,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     lazy var isWindowKey: () -> Bool = { [weak self] in self?.window?.isKeyWindow ?? false }
     /// Hora do relógio de parede, em segundos desde 1970. Trocada nos testes.
     var wallClock: () -> Double = { Date().timeIntervalSince1970 }
+    /// Pasta de verdade de cada projeto aberto nesta execução, com a hora: os mais usados da cascata
+    /// `Projeto` contam a abertura antes de o Claude Code gravar a conversa. Fica só na memória.
+    private var openedProjects: [String: Date] = [:]
     /// Janela do diff, criada no primeiro pedido.
     private(set) var diffPanel: DiffWindowController?
     /// Nome com que a janela do diff guarda posição e tamanho. nil: não guarda.
@@ -425,7 +428,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             }
         }
         let configDir = SessionLocator.configDir(environment: launch.baseEnvironment, home: launch.home)
-        let used = ProjectUsage.mostUsed(order, configDir: configDir, now: Date(timeIntervalSince1970: wallClock()))
+        let used = ProjectUsage.mostUsed(order, configDir: configDir, now: Date(timeIntervalSince1970: wallClock()),
+                                         opened: openedProjects)
             .compactMap { offered[$0] }
         guard !used.isEmpty else { return [] }
         var items = [NSMenuItem.sectionHeader(title: Self.mostUsedTitle)]
@@ -567,11 +571,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     /// Abre um agente na pasta do projeto.
     func openAgent(in directory: String) {
-        guard launch != nil else { return }
+        guard let launch else { return }
         guard PathTools.isDirectory(directory) else {
             warnings.add("pasta nao encontrada: nada foi aberto")
             return
         }
+        openedProjects[launch.canonical(directory)] = Date(timeIntervalSince1970: wallClock())
         addAgents(1, in: directory)
     }
 

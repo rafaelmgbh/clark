@@ -47,14 +47,20 @@ public enum ProjectUsage {
 
     /// As pastas mais usadas, da mais usada para a menos. No empate vem antes a usada por último.
     /// A pasta sem conversa na janela fica de fora.
+    /// - Parameter opened: quando um agente foi aberto em cada pasta. O Claude Code só grava a conversa
+    ///   no primeiro pedido: até lá, a abertura conta como uma conversa mexida naquela hora.
     public static func mostUsed(_ canonicalDirectories: [String], configDir: String, now: Date,
+                                opened: [String: Date] = [:],
                                 limit: Int = ProjectUsage.maxSuggestions) -> [String] {
         var seen: Set<String> = []
         var used: [(path: String, count: Count)] = []
         for path in canonicalDirectories where seen.insert(path).inserted {
-            if let count = count(canonicalDirectory: path, configDir: configDir, now: now) {
-                used.append((path, count))
+            var count = count(canonicalDirectory: path, configDir: configDir, now: now)
+            if let openedAt = opened[path], openedAt >= now.addingTimeInterval(-window),
+               (count?.latest ?? .distantPast) < openedAt {
+                count = Count(conversations: (count?.conversations ?? 0) + 1, latest: openedAt)
             }
+            if let count { used.append((path, count)) }
         }
         used.sort { one, other in
             if one.count.conversations != other.count.conversations {

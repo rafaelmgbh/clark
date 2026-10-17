@@ -1601,6 +1601,18 @@ final class MainWindowControllerTests: XCTestCase {
         XCTAssertEqual(controller.panes.map(\.company.name), ["acme"])
     }
 
+    func testChosenProjectMovesUpBeforeItsFirstConversation() {
+        let api = repository("Projetos/acme/api")
+        let site = repository("Projetos/beta/site")
+        used(1, in: api, age: 3600)
+        let controller = fixture.started()
+        XCTAssertEqual(Array(outline(controller.projectMenu()).prefix(4)), ["Mais usados", "ACME", "Api", "-"])
+        controller.openAgent(in: site)
+        XCTAssertEqual(Array(outline(controller.projectMenu()).prefix(6)),
+                       ["Mais usados", "BETA", "Site", "ACME", "Api", "-"],
+                       "o projeto escolhido entra já na próxima abertura, sem esperar a conversa no disco")
+    }
+
     func testUsedWorktreeIsSuggestedToo() {
         let api = repository("Projetos/acme/api")
         let chamado = fixture.home + "/Projetos/acme/api-431"

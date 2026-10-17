@@ -107,6 +107,22 @@ final class ProjectUsageTests: XCTestCase {
         XCTAssertEqual(mostUsed([api, portal, site], limit: 0), [])
     }
 
+    func testOpenedFolderCountsBeforeItsConversationIsSaved() {
+        conversations(1, in: api, age: day)
+        conversations(1, in: site, age: 2 * day)
+        let opened = [site: now.addingTimeInterval(-60), portal: now.addingTimeInterval(-30)]
+        XCTAssertEqual(ProjectUsage.mostUsed([api, portal, site], configDir: configDir, now: now, opened: opened),
+                       [site, portal, api], "a pasta aberta conta uma conversa, mexida quando foi aberta")
+    }
+
+    func testOpenedFolderIsNotCountedTwiceOnceItsConversationIsSaved() {
+        conversations(2, in: api)
+        conversations(1, in: site, age: 10)
+        let opened = [site: now.addingTimeInterval(-30)]
+        XCTAssertEqual(ProjectUsage.mostUsed([api, site], configDir: configDir, now: now, opened: opened),
+                       [api, site], "a conversa gravada depois da abertura é a dela")
+    }
+
     func testSameFolderAskedTwiceIsSuggestedOnce() {
         conversations(1, in: api)
         XCTAssertEqual(mostUsed([api, api]), [api])
