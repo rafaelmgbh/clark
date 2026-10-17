@@ -7,12 +7,15 @@ public struct SavedAgent: Equatable, Sendable {
     public var sessionID: String?
     /// Passo de escurecimento da cor da empresa (campo `color` do arquivo).
     public var tone: Int?
+    /// O que o agente roda. Ausente ou desconhecido no arquivo: o Claude Code.
+    public var tool: AgentTool
 
-    public init(name: String?, cwd: String?, sessionID: String?, tone: Int?) {
+    public init(name: String?, cwd: String?, sessionID: String?, tone: Int?, tool: AgentTool = .claude) {
         self.name = name
         self.cwd = cwd
         self.sessionID = sessionID
         self.tone = tone
+        self.tool = tool
     }
 }
 
@@ -65,7 +68,8 @@ public struct ClarkConfig {
             agents = list.compactMap { $0 as? [String: Any] }.prefix(Self.maxAgents).map { entry in
                 SavedAgent(name: Self.text(entry["name"]), cwd: Self.text(entry["cwd"]),
                            sessionID: SessionLocator.normalized(entry["session_id"] as? String),
-                           tone: Self.integer(entry["color"]).map { abs($0) % CompanyResolver.toneCount })
+                           tone: Self.integer(entry["color"]).map { abs($0) % CompanyResolver.toneCount },
+                           tool: (entry["tool"] as? String).flatMap(AgentTool.init(rawValue:)) ?? .claude)
             }
         }
         if let names = object["project_names"] as? [String: Any] {
@@ -95,6 +99,7 @@ public struct ClarkConfig {
             entry["cwd"] = agent.cwd
             entry["session_id"] = agent.sessionID
             entry["color"] = agent.tone
+            if agent.tool != .claude { entry["tool"] = agent.tool.rawValue }
             return entry
         }
         object["project_names"] = projectNames.isEmpty ? nil : projectNames

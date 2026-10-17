@@ -52,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let launch = AgentLaunch(
                     baseEnvironment: capture.variables,
                     claudePath: ClaudeLocator.find(path: capture.variables["PATH"], home: home),
+                    codexPath: CodexLocator.find(path: capture.variables["PATH"], home: home),
                     gitPath: GitLocator.find(path: capture.variables["PATH"]),
                     shell: shell, home: home, claudeArgs: options.claudeArgs, resolver: resolver)
                 controller.start(launch: launch, options: options, startupWarnings: warnings)

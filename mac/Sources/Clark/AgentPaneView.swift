@@ -6,6 +6,8 @@ struct AgentLaunch {
     var baseEnvironment: [String: String]
     /// nil: o `claude` não foi encontrado e o painel abre o shell com o aviso.
     var claudePath: String?
+    /// nil: o `codex` não foi encontrado, e o agente Codex abre o shell com o aviso.
+    var codexPath: String? = nil
     /// nil: sem git na máquina, e nenhum agente mostra diff.
     var gitPath: String? = nil
     var shell: String
@@ -13,6 +15,14 @@ struct AgentLaunch {
     /// Argumentos extras vindos de `clark -- <args>`.
     var claudeArgs: [String]
     var resolver: CompanyResolver
+
+    /// Caminho do programa que o agente roda. nil: não está instalado.
+    func executable(for tool: AgentTool) -> String? {
+        switch tool {
+        case .claude: claudePath
+        case .codex: codexPath
+        }
+    }
 
     /// A pasta pedida quando existe; senão a home.
     func usableDirectory(_ directory: String) -> String {
@@ -85,8 +95,10 @@ final class AgentPaneView: PixelView {
         + "\u{1b}[2mENTER = continue?  CMD+W = sair\u{1b}[0m\r\n"
     static let missingClaude = "\r\n\u{1b}[1;31m  claude nao encontrado no PATH.\u{1b}[0m "
         + "Instale o Claude Code e reabra o CLARK.\r\n\r\n"
+    static let missingCodex = "\r\n\u{1b}[1;31m  codex nao encontrado no PATH.\u{1b}[0m "
+        + "Instale o Codex e reabra o CLARK.\r\n\r\n"
     static let launchFailed = "\r\n\u{1b}[1;31m  falha ao iniciar o processo.\u{1b}[0m\r\n"
-    static let unfilteredShell = "Sem claude: o shell relê o rc e o filtro de variáveis não vale"
+    static let unfilteredShell = "Sem o programa do agente: o shell relê o rc e o filtro de variáveis não vale"
     /// As conversas são lidas fora da thread principal: um arquivo grande não trava a janela.
     private static let digestQueue = DispatchQueue(label: "clark.digest", qos: .utility)
 
@@ -96,6 +108,8 @@ final class AgentPaneView: PixelView {
     private(set) var project: String
     /// Aberto na home: fora de projeto e de empresa.
     let isGlobal: Bool
+    /// O que o agente roda: o Claude Code ou o Codex.
+    let tool: AgentTool
     /// A conversa que o `claude` do agente segue. Muda com `/clear` e `/resume` e quando a conversa
     /// vai para segundo plano.
     private(set) var sessionID: String
@@ -163,8 +177,10 @@ final class AgentPaneView: PixelView {
 
     /// - Parameter nicknames: caminho -> apelido, como está no `config.json`.
     init(name: String, directory: String, sessionID: String, tone: Int, launch: AgentLaunch,
-         nicknames: [String: String] = [:], appearance: TerminalAppearance, clock: @escaping () -> Double) {
+         tool: AgentTool = .claude, nicknames: [String: String] = [:], appearance: TerminalAppearance,
+         clock: @escaping () -> Double) {
         self.name = name
+        self.tool = tool
         self.directory = launch.usableDirectory(directory)
         project = launch.projectName(forDirectory: directory, nicknames: nicknames)
         isGlobal = launch.isGlobal(directory)
@@ -212,7 +228,7 @@ final class AgentPaneView: PixelView {
 
     // MARK: processo
 
-    /// Abre o `claude` (ou o shell, sem `claude`) no terminal atual.
+    /// Abre o `claude` ou o `codex` (ou o shell, sem o programa) no terminal atual.
     func spawn() {
         let now = clock()
         let environment = EnvPolicy.apply(base: launch.baseEnvironment, globalAllow: launch.resolver.globalEnvAllow,
@@ -223,7 +239,7 @@ final class AgentPaneView: PixelView {
         handoffUntil = -.infinity
         handoffAt = -.infinity
         attachedJob = nil
-        if let claude = launch.claudePath {
+        if tool == .claude, let claude = launch.claudePath {
             let configDir = SessionLocator.configDir(environment: environment.variables, home: launch.home)
             let command: ClaudeCommand
             // A conversa segue em segundo plano: reabrir com `--resume` abriria uma cópia dela.
@@ -242,11 +258,18 @@ final class AgentPaneView: PixelView {
             bypassesPermissions = command.bypassesPermissions
             terminal.startProcess(executable: claude, args: command.arguments, environment: environment.asArray,
                                   currentDirectory: directory)
+        } else if tool == .codex, let codex = launch.codexPath {
+            // O que o CLARK lê do disco é das conversas do Claude Code: no Codex fica desligado.
+            claudeConfigDir = nil
+            startedNewConversation = false
+            bypassesPermissions = false
+            terminal.startProcess(executable: codex, args: [], environment: environment.asArray,
+                                  currentDirectory: directory)
         } else {
             claudeConfigDir = nil
             startedNewConversation = false
             bypassesPermissions = false
-            terminal.feed(text: Self.missingClaude)
+            terminal.feed(text: tool == .codex ? Self.missingCodex : Self.missingClaude)
             terminal.startProcess(executable: launch.shell, args: ["-l"], environment: environment.asArray,
                                   currentDirectory: directory)
         }
@@ -526,9 +549,9 @@ final class AgentPaneView: PixelView {
         })
         menu.addItem(actionItem("Fechar") { [weak self] in self.map { $0.delegate?.paneRequestsClose($0) } })
         menu.addItem(.separator())
-        // Sem `claude` o painel é o shell de login, que relê o rc e devolve o que saiu do ambiente:
+        // Sem o programa o painel é o shell de login, que relê o rc e devolve o que saiu do ambiente:
         // o menu não afirma uma remoção que não vale ali.
-        guard launch.claudePath != nil else {
+        guard launch.executable(for: tool) != nil else {
             let unfiltered = NSMenuItem(title: Self.unfilteredShell, action: nil, keyEquivalent: "")
             unfiltered.isEnabled = false
             menu.addItem(unfiltered)

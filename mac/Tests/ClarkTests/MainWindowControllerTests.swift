@@ -706,7 +706,7 @@ final class MainWindowControllerTests: XCTestCase {
         environment["GITHUB_TOKEN"] = "segredo"
         let controller = fixture.started(agents: 1, environment: environment)
         let item = controller.panes[0].contextMenu().items.last
-        XCTAssertEqual(item?.title, "Sem claude: o shell relê o rc e o filtro de variáveis não vale")
+        XCTAssertEqual(item?.title, AgentPaneView.unfilteredShell)
         XCTAssertEqual(item?.isEnabled, false)
         XCTAssertNil(item?.submenu)
     }
@@ -1437,7 +1437,66 @@ final class MainWindowControllerTests: XCTestCase {
 
     func testAgentMenuWithoutProjectsHasNoProjectRow() {
         let controller = fixture.started()
-        XCTAssertEqual(outline(controller.agentMenu()), ["GLOBAL", "Digitar pasta…", "Outra pasta…"])
+        XCTAssertEqual(outline(controller.agentMenu()), ["GLOBAL", "Digitar pasta…", "Outra pasta…"],
+                       "sem o codex instalado, o submenu Codex não aparece")
+    }
+
+    // MARK: Codex
+
+    func testCodexSubmenuOffersTheSamePlaces() {
+        repository("Projetos/acme/api")
+        let controller = fixture.started(codex: fixture.fakeCodex("sleep 5"))
+        XCTAssertEqual(outline(controller.agentMenu()), [
+            "GLOBAL",
+            "Projeto >", "  Empresas", "  ACME >", "    Api", "    -", "    Pasta da empresa",
+            "Digitar pasta…",
+            "Outra pasta…",
+            "-",
+            "Codex >",
+            "  GLOBAL",
+            "  Projeto >", "    Empresas", "    ACME >", "      Api", "      -", "      Pasta da empresa",
+            "  Digitar pasta…",
+            "  Outra pasta…",
+        ], "o Claude é o clique direto; o Codex, o mesmo menu um nível abaixo")
+        XCTAssertEqual(item(controller.agentMenu(), "Codex", "Outra pasta…")?.action,
+                       #selector(MainWindowController.chooseCodexFolder(_:)))
+        XCTAssertEqual(item(controller.agentMenu(), "Codex", "Digitar pasta…")?.action,
+                       #selector(MainWindowController.typeCodexFolder(_:)))
+    }
+
+    func testCodexAgentRunsCodexInTheProjectAndIsSaved() {
+        let api = repository("Projetos/acme/api")
+        let controller = fixture.started(claude: fixture.fakeClaude("echo CLAUDE; sleep 5"),
+                                         codex: fixture.fakeCodex("echo \"CODEX ARGS=$*\" PASTA=$(pwd); sleep 5"))
+        choose(item(controller.agentMenu(), "Codex", "Projeto", "ACME", "Api"))
+        let pane = controller.panes[0]
+        XCTAssertEqual(pane.tool, .codex)
+        XCTAssertEqual(pane.name, "CODEX 1", "o nome diz que o agente é do Codex")
+        XCTAssertTrue(waitUntil { self.lines(pane).contains { $0.hasPrefix("CODEX") } })
+        XCTAssertTrue(lines(pane).contains("CODEX ARGS= PASTA=\(PathTools.canonical(api, base: fixture.home, home: fixture.home))")
+                      || lines(pane).contains("CODEX ARGS= PASTA=\(api)"), "\(lines(pane))")
+        XCTAssertEqual(savedConfig().agents.map(\.tool), [.codex])
+
+        controller.newSiblingAgent(nil)
+        XCTAssertEqual(controller.panes.map(\.tool), [.codex, .codex], "o irmão roda o mesmo programa")
+        controller.addAgents(1)
+        XCTAssertEqual(controller.panes.last?.tool, .claude, "o padrão segue o Claude")
+        XCTAssertEqual(controller.panes.last?.name, "AGENT 1")
+    }
+
+    func testSavedCodexAgentReopensWithCodex() {
+        var config = ClarkConfig()
+        config.agents = [SavedAgent(name: "CODEX 1", cwd: fixture.home, sessionID: nil, tone: 0, tool: .codex)]
+        let controller = fixture.started(config: config, codex: fixture.fakeCodex("echo REABERTO; sleep 5"))
+        XCTAssertEqual(controller.panes.map(\.tool), [.codex])
+        XCTAssertTrue(waitUntil { self.lines(controller.panes[0]).contains("REABERTO") })
+    }
+
+    func testCodexAgentWithoutCodexOpensTheShellWithTheWarning() {
+        var config = ClarkConfig()
+        config.agents = [SavedAgent(name: "CODEX 1", cwd: fixture.home, sessionID: nil, tone: 0, tool: .codex)]
+        let controller = fixture.started(config: config)
+        XCTAssertTrue(waitUntil { self.lines(controller.panes[0]).contains { $0.contains("codex nao encontrado") } })
     }
 
     func testAgentMenuProjectRowStartsWithTheMostUsed() {

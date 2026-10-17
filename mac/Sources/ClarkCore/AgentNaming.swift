@@ -3,9 +3,9 @@ import Foundation
 public enum AgentNaming {
     public static let maxLength = 20
 
-    /// `"AGENT 3"` -> 3. Qualquer outro nome devolve nil.
-    public static func automaticNumber(_ name: String) -> Int? {
-        let prefix = "AGENT "
+    /// `"AGENT 3"` -> 3 (`"CODEX 3"` no Codex). Qualquer outro nome devolve nil.
+    public static func automaticNumber(_ name: String, tool: AgentTool = .claude) -> Int? {
+        let prefix = tool.namePrefix + " "
         guard name.hasPrefix(prefix) else { return nil }
         let digits = name.dropFirst(prefix.count)
         guard !digits.isEmpty, digits.utf8.count <= 6,
@@ -14,11 +14,11 @@ public enum AgentNaming {
     }
 
     /// Menor número livre: fechou o AGENT 2, o próximo volta a ser AGENT 2.
-    public static func automaticName(existing: [String]) -> String {
-        let used = Set(existing.compactMap(automaticNumber))
+    public static func automaticName(existing: [String], tool: AgentTool = .claude) -> String {
+        let used = Set(existing.compactMap { automaticNumber($0, tool: tool) })
         var number = 1
         while used.contains(number) { number += 1 }
-        return "AGENT \(number)"
+        return "\(tool.namePrefix) \(number)"
     }
 
     /// Nome digitado: vira ASCII maiúsculo (a fonte pixel não tem acentos), sem espaços nas

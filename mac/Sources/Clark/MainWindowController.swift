@@ -39,6 +39,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     let pixelMenu = PixelMenu()
     /// Campo do "Digitar pasta…" do + AGENT, enquanto está aberto.
     private(set) var folderField: NSTextField?
+    /// O que o agente da pasta digitada roda: o campo foi aberto pelo + AGENT ou pelo submenu Codex.
+    private var folderTool = AgentTool.claude
 
     private var config: ClarkConfig
     private let store: ConfigStore
@@ -162,9 +164,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
                 if vanished { warnings.add("pasta de agente sumiu: abriu na home, conversa nova") }
                 let reused = saved.sessionID.map { id in panes.contains { $0.sessionID == id } } ?? false
                 let name = saved.name.flatMap(AgentNaming.sanitized)
-                    ?? AgentNaming.automaticName(existing: panes.map(\.name))
+                    ?? AgentNaming.automaticName(existing: panes.map(\.name), tool: saved.tool)
                 if let pane = makePane(name: name, directory: directory,
-                                       sessionID: reused || vanished ? nil : saved.sessionID, tone: saved.tone) {
+                                       sessionID: reused || vanished ? nil : saved.sessionID, tone: saved.tone,
+                                       tool: saved.tool) {
                     created.append(pane)
                 }
             }
@@ -216,7 +219,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         config.layout = layoutMode
         config.fontScale = fontScale
         config.agents = panes.map {
-            SavedAgent(name: $0.name, cwd: $0.directory, sessionID: $0.sessionID, tone: $0.tone)
+            SavedAgent(name: $0.name, cwd: $0.directory, sessionID: $0.sessionID, tone: $0.tone, tool: $0.tool)
         }
         config.mainAgent = mainPane.flatMap { main in panes.firstIndex { $0 === main } } ?? 0
         // Falha de gravação não interrompe nada: o estado em memória segue valendo, e fica o aviso.
@@ -233,13 +236,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     // MARK: agentes
 
     /// Cria o painel sem abrir o processo: o `spawn` vem depois do layout, com o terminal já no tamanho certo.
-    private func makePane(name: String, directory: String, sessionID: String?, tone: Int?) -> AgentPaneView? {
+    private func makePane(name: String, directory: String, sessionID: String?, tone: Int?,
+                          tool: AgentTool = .claude) -> AgentPaneView? {
         guard let launch, panes.count < ClarkConfig.maxAgents else { return nil }
         let company = launch.company(forDirectory: directory)
         let usedTones = panes.filter { $0.company.name == company.name }.map(\.tone)
         let pane = AgentPaneView(name: name, directory: directory, sessionID: sessionID ?? SessionLocator.newID(),
                                  tone: tone ?? AgentNaming.freeTone(used: usedTones), launch: launch,
-                                 nicknames: config.projectNames, appearance: terminalAppearance, clock: clock)
+                                 tool: tool, nicknames: config.projectNames, appearance: terminalAppearance, clock: clock)
         pane.delegate = self
         panes.append(pane)
         stage.addSubview(pane)
@@ -255,12 +259,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     /// Abre agentes novos. Sem pasta, abrem no `GLOBAL` (a home), fora de projeto.
-    func addAgents(_ count: Int, in directory: String? = nil) {
+    func addAgents(_ count: Int, in directory: String? = nil, tool: AgentTool = .claude) {
         guard launch != nil else { return }
         var created: [AgentPaneView] = []
         for _ in 0..<max(0, count) {
-            guard let pane = makePane(name: AgentNaming.automaticName(existing: panes.map(\.name)),
-                                      directory: directory ?? home, sessionID: nil, tone: nil) else { break }
+            guard let pane = makePane(name: AgentNaming.automaticName(existing: panes.map(\.name), tool: tool),
+                                      directory: directory ?? home, sessionID: nil, tone: nil, tool: tool) else { break }
             created.append(pane)
         }
         if created.count < count {
@@ -387,6 +391,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     static let companiesTitle = "Empresas"
     static let agentProjectTitle = "Projeto"
     static let typedFolderTitle = "Digitar pasta…"
+    static let codexTitle = "Codex"
 
     /// Cascata `Projeto` do + AGENT e do ⌘D, relida do disco a cada abertura: os projetos mais usados,
     /// uma empresa por linha com os projetos dela a um clique e as pastas apelidadas fora de toda
@@ -542,8 +547,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     /// Menu do + AGENT, do ⌘N e do ⌘D: onde o agente novo abre. O `GLOBAL`, a cascata `Projeto`, que
-    /// some quando não há nenhum, uma pasta digitada e qualquer pasta escolhida no Finder.
-    func agentMenu() -> NSMenu {
+    /// some quando não há nenhum, uma pasta digitada, qualquer pasta escolhida no Finder e, com o
+    /// `codex` instalado, tudo isso de novo no submenu Codex.
+    func agentMenu() -> NSMenu { agentMenu(codex: true) }
+
+    private func agentMenu(codex: Bool) -> NSMenu {
         let menu = NSMenu(title: "Novo agente")
         menu.addItem(projectItem(ProjectNaming.global, path: home))
         let projects = projectMenu()
@@ -558,26 +566,58 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             item.target = self
             menu.addItem(item)
         }
+        if codex, let item = codexItem() {
+            menu.addItem(.separator())
+            menu.addItem(item)
+        }
         return menu
+    }
+
+    /// O mesmo menu, abrindo o agente com o Codex. Sem o `codex` instalado, não aparece.
+    private func codexItem() -> NSMenuItem? {
+        guard launch?.codexPath != nil else { return nil }
+        let menu = NSMenu(title: Self.codexTitle)
+        let source = agentMenu(codex: false)
+        for item in source.items {
+            source.removeItem(item)
+            menu.addItem(item)
+        }
+        Self.retarget(menu)
+        let holder = NSMenuItem(title: Self.codexTitle, action: nil, keyEquivalent: "")
+        holder.submenu = menu
+        return holder
+    }
+
+    /// Troca as ações do menu pelas que abrem o agente com o Codex.
+    private static func retarget(_ menu: NSMenu) {
+        let codex: [Selector: Selector] = [
+            #selector(openProject(_:)): #selector(openCodexProject(_:)),
+            #selector(typeFolder(_:)): #selector(typeCodexFolder(_:)),
+            #selector(chooseFolder(_:)): #selector(chooseCodexFolder(_:)),
+        ]
+        for item in menu.items {
+            if let action = item.action, let replacement = codex[action] { item.action = replacement }
+            if let submenu = item.submenu { retarget(submenu) }
+        }
     }
 
     /// Abre um agente na pasta digitada no + AGENT. Aceita `~` e caminho relativo à pasta do agente em
     /// foco. Texto vazio não abre nada.
-    func openTypedFolder(_ text: String) {
+    func openTypedFolder(_ text: String, tool: AgentTool = .claude) {
         let typed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !typed.isEmpty else { return }
-        openAgent(in: PathTools.absolute(typed, base: currentPane?.directory ?? home, home: home))
+        openAgent(in: PathTools.absolute(typed, base: currentPane?.directory ?? home, home: home), tool: tool)
     }
 
     /// Abre um agente na pasta do projeto.
-    func openAgent(in directory: String) {
+    func openAgent(in directory: String, tool: AgentTool = .claude) {
         guard let launch else { return }
         guard PathTools.isDirectory(directory) else {
             warnings.add("pasta nao encontrada: nada foi aberto")
             return
         }
         openedProjects[launch.canonical(directory)] = Date(timeIntervalSince1970: wallClock())
-        addAgents(1, in: directory)
+        addAgents(1, in: directory, tool: tool)
     }
 
     /// Agente sobre o qual os atalhos agem.
@@ -753,7 +793,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     func paneRequestsZoom(_ pane: AgentPaneView) { toggleZoom(of: pane) }
     func paneRequestsClose(_ pane: AgentPaneView) { close(pane) }
 
-    func paneRequestsSibling(_ pane: AgentPaneView) { addAgents(1, in: pane.directory) }
+    func paneRequestsSibling(_ pane: AgentPaneView) { addAgents(1, in: pane.directory, tool: pane.tool) }
 
     func paneRequestsRename(_ pane: AgentPaneView) {
         presentNameField(for: pane, text: pane.name, placeholder: "Nome do agente", project: false)
@@ -830,8 +870,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     /// "Digitar pasta…" do + AGENT: campo de texto sob o botão. O Enter abre o agente na pasta.
-    @objc func typeFolder(_ sender: Any?) {
+    @objc func typeFolder(_ sender: Any?) { typeFolder(tool: .claude) }
+
+    /// "Digitar pasta…" do submenu Codex.
+    @objc func typeCodexFolder(_ sender: Any?) { typeFolder(tool: .codex) }
+
+    private func typeFolder(tool: AgentTool) {
         guard launch != nil else { return }
+        folderTool = tool
         folderPopover?.close()
         let (popover, field) = fieldPopover(text: "", placeholder: "Pasta: ~/Projetos/... ou relativa",
                                             width: 360, action: #selector(commitTypedFolder(_:)))
@@ -846,7 +892,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         folderPopover?.close()
         folderPopover = nil
         folderField = nil
-        openTypedFolder(sender.stringValue)
+        openTypedFolder(sender.stringValue, tool: folderTool)
     }
 
     /// Mais um agente na pasta do agente atual.
@@ -904,8 +950,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         if let path = sender.representedObject as? String { openAgent(in: path) }
     }
 
+    /// Pasta escolhida no submenu Codex do + AGENT.
+    @objc func openCodexProject(_ sender: NSMenuItem) {
+        if let path = sender.representedObject as? String { openAgent(in: path, tool: .codex) }
+    }
+
     /// "Outra pasta…" do + AGENT: qualquer pasta do disco.
-    @objc func chooseFolder(_ sender: Any?) {
+    @objc func chooseFolder(_ sender: Any?) { chooseFolder(tool: .claude) }
+
+    /// "Outra pasta…" do submenu Codex.
+    @objc func chooseCodexFolder(_ sender: Any?) { chooseFolder(tool: .codex) }
+
+    private func chooseFolder(tool: AgentTool) {
         guard let window, launch != nil else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -915,7 +971,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         panel.prompt = "Escolher"
         panel.message = "Pasta onde o agente abre"
         panel.beginSheetModal(for: window) { [weak self] response in
-            if response == .OK, let path = panel.url?.path { self?.openAgent(in: path) }
+            if response == .OK, let path = panel.url?.path { self?.openAgent(in: path, tool: tool) }
         }
     }
 
@@ -975,6 +1031,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             return currentPane.map { !$0.isGlobal } ?? false
         case #selector(chooseProject(_:)), #selector(openProject(_:)), #selector(chooseFolder(_:)),
              #selector(typeFolder(_:)):
+            return launch != nil
+        case #selector(openCodexProject(_:)), #selector(chooseCodexFolder(_:)), #selector(typeCodexFolder(_:)):
+            return launch?.codexPath != nil
             return launch != nil
         case #selector(copyLines(_:)):
             return currentPane != nil
