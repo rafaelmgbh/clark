@@ -433,8 +433,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             }
         }
         let configDir = SessionLocator.configDir(environment: launch.baseEnvironment, home: launch.home)
-        let used = ProjectUsage.mostUsed(order, configDir: configDir, now: Date(timeIntervalSince1970: wallClock()),
-                                         opened: openedProjects)
+        let now = Date(timeIntervalSince1970: wallClock())
+        // As conversas do Codex contam junto: o projeto é o mesmo, seja qual for o programa.
+        let codex = launch.codexPath == nil ? [:] : CodexSessions.usage(
+            codexHome: CodexSessions.home(environment: launch.baseEnvironment, home: launch.home), now: now,
+            canonicalize: launch.canonical)
+        let used = ProjectUsage.mostUsed(order, configDir: configDir, now: now, opened: openedProjects, extra: codex)
             .compactMap { offered[$0] }
         guard !used.isEmpty else { return [] }
         var items = [NSMenuItem.sectionHeader(title: Self.mostUsedTitle)]
@@ -786,6 +790,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     func paneSessionDidChange(_ pane: AgentPaneView) { persist() }
+
+    func paneSessionsInUse(_ pane: AgentPaneView) -> Set<String> {
+        Set(panes.filter { $0 !== pane }.map(\.sessionID))
+    }
 
     func paneRequestsDiff(_ pane: AgentPaneView) { presentDiff(of: pane) }
     func paneRequestsDiff(_ pane: AgentPaneView, path: String) { presentDiff(of: pane, path: path) }

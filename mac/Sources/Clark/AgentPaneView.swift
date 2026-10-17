@@ -72,6 +72,8 @@ protocol AgentPaneDelegate: AnyObject {
     func paneDidChange(_ pane: AgentPaneView)
     /// O agente passou a seguir outra conversa: é ela que volta ao reabrir.
     func paneSessionDidChange(_ pane: AgentPaneView)
+    /// Conversas que os outros agentes abertos seguem.
+    func paneSessionsInUse(_ pane: AgentPaneView) -> Set<String>
     func paneRequestsSelect(_ pane: AgentPaneView)
     func paneRequestsZoom(_ pane: AgentPaneView)
     func paneRequestsClose(_ pane: AgentPaneView)
@@ -153,6 +155,10 @@ final class AgentPaneView: PixelView {
     private var reportedState = AgentState.boot
     /// Pasta de configuração do Claude deste agente, conhecida a partir do `spawn`.
     private var claudeConfigDir: String?
+    /// Pasta do Codex deste agente, conhecida a partir do `spawn`.
+    private var codexHome: String?
+    /// Arquivo da conversa que o `codex` do agente grava. nil até ela aparecer no disco.
+    private var codexSession: String?
     /// O job em segundo plano que o processo do agente mostra, quando ele abriu com `claude attach`.
     private var attachedJob: String?
     /// Até quando, depois da saída, o anúncio de conversa mandada para segundo plano é procurado.
@@ -239,6 +245,8 @@ final class AgentPaneView: PixelView {
         handoffUntil = -.infinity
         handoffAt = -.infinity
         attachedJob = nil
+        codexHome = nil
+        codexSession = nil
         if tool == .claude, let claude = launch.claudePath {
             let configDir = SessionLocator.configDir(environment: environment.variables, home: launch.home)
             let command: ClaudeCommand
@@ -259,14 +267,20 @@ final class AgentPaneView: PixelView {
             terminal.startProcess(executable: claude, args: command.arguments, environment: environment.asArray,
                                   currentDirectory: directory)
         } else if tool == .codex, let codex = launch.codexPath {
-            // O que o CLARK lê do disco é das conversas do Claude Code: no Codex fica desligado.
+            // O resumo da última sessão e o segundo plano são do Claude Code: no Codex ficam desligados.
             claudeConfigDir = nil
             startedNewConversation = false
             bypassesPermissions = false
-            terminal.startProcess(executable: codex, args: [], environment: environment.asArray,
+            let home = CodexSessions.home(environment: environment.variables, home: launch.home)
+            codexHome = home
+            codexSession = CodexSessions.path(of: sessionID, codexHome: home)
+            // O Codex não aceita o id de uma conversa nova: sem a conversa no disco, ela é descoberta depois.
+            let args = codexSession == nil ? [] : ["resume", sessionID]
+            terminal.startProcess(executable: codex, args: args, environment: environment.asArray,
                                   currentDirectory: directory)
         } else {
             claudeConfigDir = nil
+            codexHome = nil
             startedNewConversation = false
             bypassesPermissions = false
             terminal.feed(text: tool == .codex ? Self.missingCodex : Self.missingClaude)
@@ -355,6 +369,7 @@ final class AgentPaneView: PixelView {
         let before = machine.state, remoteBefore = remoteControl
         // Antes do tique da máquina: com a tela parada, quem decide é o que o Claude Code diz agora.
         refreshSession(now: now)
+        refreshCodexSession(now: now)
         followHandoff(now: now)
         let notify = machine.tick(now: now, watched: delegate?.paneIsWatched(self) ?? false)
         if machine.state != before || remoteControl != remoteBefore { changed() }
@@ -383,6 +398,24 @@ final class AgentPaneView: PixelView {
         } else if let id = report?.sessionID {
             adopt(id)
         }
+    }
+
+    /// O mesmo para o Codex: acha a conversa que o `codex` do agente abriu, para voltar a ela ao
+    /// reabrir, e lê dela se o turno segue. O Codex não diz dos comandos em segundo plano.
+    private func refreshCodexSession(now: Double) {
+        guard let codexHome, machine.state != .exited, now - activityAt >= Self.activityInterval else { return }
+        activityAt = now
+        if codexSession == nil {
+            let since = Date(timeIntervalSince1970: spawnedAt - 1)
+            let excluding = delegate?.paneSessionsInUse(self) ?? []
+            guard let id = CodexSessions.newSession(codexHome: codexHome, directory: launch.canonical(directory),
+                                                    since: since, excluding: excluding,
+                                                    now: Date(), canonicalize: launch.canonical),
+                  let path = CodexSessions.path(of: id, codexHome: codexHome) else { return }
+            codexSession = path
+            adopt(id)
+        }
+        machine.sessionBusy(codexSession.map(CodexSessions.isBusy(path:)) ?? false)
     }
 
     /// Depois da saída, procura na tela o anúncio da conversa mandada para segundo plano e passa a

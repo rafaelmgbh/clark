@@ -1492,6 +1492,34 @@ final class MainWindowControllerTests: XCTestCase {
         XCTAssertTrue(waitUntil { self.lines(controller.panes[0]).contains("REABERTO") })
     }
 
+    func testCodexAgentFindsItsConversationAndResumesItOnReopen() {
+        let id = "01a14518-c19d-7260-8caf-1f62b7e86a21"
+        // Como o codex: a conversa nova vai para a pasta do dia, com a pasta de trabalho na primeira linha.
+        let codex = fixture.fakeCodex("""
+            echo "ARGS=$*"
+            dir="\(fixture.home)/.codex/sessions/$(date +%Y/%m/%d)"
+            mkdir -p "$dir"
+            printf '{"type":"session_meta","payload":{"id":"\(id)","cwd":"%s"}}\\n' "$(pwd -P)" \\
+                > "$dir/rollout-2026-10-16T11-23-32-\(id).jsonl"
+            echo GRAVOU
+            sleep 5
+            """)
+        var config = ClarkConfig()
+        config.agents = [SavedAgent(name: "CODEX 1", cwd: fixture.home, sessionID: nil, tone: 0, tool: .codex)]
+        let controller = fixture.started(config: config, codex: codex)
+        let pane = controller.panes[0]
+        XCTAssertTrue(waitUntil { self.lines(pane).contains("GRAVOU") })
+        XCTAssertTrue(lines(pane).contains("ARGS="), "sem conversa no disco, o codex abre uma nova")
+        fixture.now += AgentPaneView.activityInterval
+        controller.tick()
+        XCTAssertEqual(pane.sessionID, id)
+        XCTAssertEqual(savedConfig().agents.map(\.sessionID), [id], "é a conversa que volta ao reabrir")
+
+        let reopened = fixture.started(config: savedConfig(), codex: codex)
+        XCTAssertTrue(waitUntil { self.lines(reopened.panes[0]).contains("ARGS=resume \(id)") },
+                      "\(lines(reopened.panes[0]))")
+    }
+
     func testCodexAgentWithoutCodexOpensTheShellWithTheWarning() {
         var config = ClarkConfig()
         config.agents = [SavedAgent(name: "CODEX 1", cwd: fixture.home, sessionID: nil, tone: 0, tool: .codex)]
