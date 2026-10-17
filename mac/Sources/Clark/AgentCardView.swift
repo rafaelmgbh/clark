@@ -12,7 +12,7 @@ final class AgentCardView: PixelView {
     static let previewY = 66
 
     var snapshot: AgentSnapshot { didSet { if snapshot != oldValue { needsDisplay = true } } }
-    /// Posição do agente, a partir de 1. Até 9 aparece no canto: é o número do atalho ⌘N.
+    /// Posição do agente, a partir de 1. Até 9 aparece antes do nome: é o número do atalho ⌘N.
     var index = 1 { didSet { if index != oldValue { needsDisplay = true } } }
     /// É o agente do painel principal.
     var isActive = false { didSet { if isActive != oldValue { needsDisplay = true } } }
@@ -88,6 +88,13 @@ final class AgentCardView: PixelView {
         Pixel.fill(context, 0, 0, isActive ? 6 : 4, height, snapshot.color)
 
         let x = 14
+        // O número fica antes do nome, fora do canto do X e do EM FOCO, que o cobriam.
+        var nameX = x
+        if index <= 9 {
+            let number = String(index)
+            Pixel.text(context, number, x, 10, scale: 2, theme.dim)
+            nameX += PixelFont.textWidth(number, scale: 2) + 8
+        }
         let tagWidth = PixelFont.textWidth("EM FOCO", scale: 1)
         var reserved = 24
         if isHovering {
@@ -99,12 +106,10 @@ final class AgentCardView: PixelView {
             Pixel.fill(context, width - tagWidth - 14, 6, tagWidth + 8, 13, theme.accent)
             Pixel.text(context, "EM FOCO", width - tagWidth - 10, 9, scale: 1, theme.onAccent)
             reserved = tagWidth + 20
-        } else if index <= 9 {
-            Pixel.text(context, String(index), width - 16, 10, scale: 1, theme.dim)
         }
 
-        let name = PixelFont.fit(snapshot.name, scale: 2, width: width - x - reserved)
-        Pixel.text(context, name, x, 10, scale: 2, isActive ? theme.accent : theme.ink, shadow: theme.shadow)
+        let name = PixelFont.fit(snapshot.name, scale: 2, width: width - nameX - reserved)
+        Pixel.text(context, name, nameX, 10, scale: 2, isActive ? theme.accent : theme.ink, shadow: theme.shadow)
 
         // Segunda linha: o estado e o projeto, grande enquanto couber.
         let stateColor = StateLabel.color(snapshot.state, theme: theme)

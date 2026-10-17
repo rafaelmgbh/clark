@@ -573,9 +573,20 @@ final class PixelViewsTests: XCTestCase {
     func testCardShortcutNumberOnlyUpToNine() {
         let card = AgentCardView(snapshot: snapshot())
         card.index = 3
-        XCTAssertGreaterThan(render(card).count(theme.dim, x: cardWidth - 16, y: 10, width: 6, height: 7), 0)
+        XCTAssertGreaterThan(render(card).count(theme.dim, x: 14, y: 10, width: 10, height: 14), 0)
         card.index = 12
-        XCTAssertEqual(render(card).count(theme.dim, x: cardWidth - 16, y: 10, width: 6, height: 7), 0)
+        XCTAssertEqual(render(card).count(theme.dim, x: 14, y: 10, width: 10, height: 14), 0)
+    }
+
+    /// O número fica antes do nome: nem o X do hover nem a etiqueta EM FOCO o cobrem.
+    func testCardShortcutNumberStaysVisibleOnHoverAndFocus() {
+        let card = AgentCardView(snapshot: snapshot())
+        card.index = 3
+        card.setHovering(true)
+        XCTAssertGreaterThan(render(card).count(theme.dim, x: 14, y: 10, width: 10, height: 14), 0, "com o X")
+        card.setHovering(false)
+        card.isActive = true
+        XCTAssertGreaterThan(render(card).count(theme.dim, x: 14, y: 10, width: 10, height: 14), 0, "em foco")
     }
 
     func testCardCloseButtonAppearsOnHover() {
