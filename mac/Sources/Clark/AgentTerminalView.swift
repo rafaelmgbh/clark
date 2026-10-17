@@ -36,6 +36,8 @@ final class AgentTerminalView: LocalProcessTerminalView {
 
     /// Sublinha o que o ⌘-clique abre. Sem isso o link é clicável e ninguém fica sabendo.
     let linkUnderlines = LinkUnderlineView()
+    /// Números das linhas do ⇧⌘C. Escondidos fora da escolha.
+    let lineNumbers = LineNumbersView()
     /// Relógio da leitura dos links. Trocado nos testes.
     var uptime: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     private var linksReadableAt: TimeInterval = 0
@@ -46,6 +48,11 @@ final class AgentTerminalView: LocalProcessTerminalView {
         linkUnderlines.frame = bounds
         linkUnderlines.autoresizingMask = [.width, .height]
         addSubview(linkUnderlines, positioned: .below, relativeTo: nil)
+        lineNumbers.frame = bounds
+        lineNumbers.autoresizingMask = [.width, .height]
+        lineNumbers.isHidden = true
+        lineNumbers.onFinish = { [weak self] in self.map { _ = $0.window?.makeFirstResponder($0) } }
+        addSubview(lineNumbers)
         // O SwiftTerm passa a avisar, antes de cada redesenho, que a tela mudou.
         notifyUpdateChanges = true
     }
@@ -71,7 +78,9 @@ final class AgentTerminalView: LocalProcessTerminalView {
         })
         font = appearance.font
         linkUnderlines.color = theme.term[4]
+        lineNumbers.theme = theme
         refreshLinkUnderlines()
+        refreshLineNumbers()
     }
 
     private static func byte(_ value: Double) -> UInt16 {
@@ -143,6 +152,7 @@ final class AgentTerminalView: LocalProcessTerminalView {
         guard changed else { return }
         // O texto mudou de lugar agora, e o SwiftTerm só avisa no redesenho seguinte.
         refreshLinkUnderlines()
+        refreshLineNumbers()
         onResize?()
     }
 
@@ -150,6 +160,7 @@ final class AgentTerminalView: LocalProcessTerminalView {
     override func rangeChanged(source: TerminalView, startY: Int, endY: Int) {
         super.rangeChanged(source: source, startY: startY, endY: endY)
         refreshLinkUnderlines()
+        refreshLineNumbers()
     }
 
     /// Refaz os sublinhados dos links com o que está na tela.
@@ -178,13 +189,17 @@ final class AgentTerminalView: LocalProcessTerminalView {
         }
     }
 
+    /// Tamanho de uma célula do terminal.
+    var lineCell: CGSize {
+        CGSize(width: caretFrame.width, height: getOptimalFrameSize().height / CGFloat(max(1, getTerminal().rows)))
+    }
+
     /// O traço fica onde o SwiftTerm desenha o sublinhado dele: abaixo da linha de base, na posição
     /// e na espessura que a fonte pede.
     private func linkMetrics() -> LinkUnderlineView.Metrics {
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
-        let rows = CGFloat(max(1, getTerminal().rows))
         return LinkUnderlineView.Metrics(
-            cell: CGSize(width: caretFrame.width, height: getOptimalFrameSize().height / rows),
+            cell: lineCell,
             offset: ceil(font.leading - font.descender) + font.underlinePosition,
             thickness: max(1, (scale * font.underlineThickness).rounded() / scale))
     }

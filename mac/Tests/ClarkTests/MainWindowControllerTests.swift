@@ -1922,8 +1922,8 @@ final class MainWindowControllerTests: XCTestCase {
         }
         XCTAssertEqual(Set(shortcuts).count, shortcuts.count, "atalho repetido: \(shortcuts)")
         // As maiúsculas levam o Shift: `D` é o ⌘⇧D do diff e `d` o ⌘D do projeto; `N` é o ⌘⇧N do agente na
-        // mesma pasta e `n` o ⌘N, que pergunta onde o agente abre.
-        for key in ["n", "N", "w", "d", "D", "r", "l", "\r", "{", "}", "+", "=", "-", "0", "c", "v", "q"]
+        // mesma pasta e `n` o ⌘N, que pergunta onde o agente abre; `C` é o ⌘⇧C que copia uma linha pelo teclado.
+        for key in ["n", "N", "w", "d", "D", "r", "l", "\r", "{", "}", "+", "=", "-", "0", "c", "C", "v", "q"]
             + (1...9).map(String.init) {
             XCTAssertTrue(shortcuts.contains(key), "falta ⌘\(key)")
         }
@@ -1933,7 +1933,7 @@ final class MainWindowControllerTests: XCTestCase {
         let expected = ["newAgent:", "newSiblingAgent:", "chooseProject:", "closeAgent:", "closeAllAgents:",
                         "toggleLayout:", "toggleZoom:", "increaseFont:", "decreaseFont:", "resetFont:",
                         "previousAgent:", "nextAgent:", "renameAgent:", "nicknameProject:", "showDiff:",
-                        "refreshDiff:", "selectAgentByNumber:"]
+                        "refreshDiff:", "selectAgentByNumber:", "copyLines:"]
         let actions = Set(leaves.compactMap(\.action).map(NSStringFromSelector))
         for name in expected {
             XCTAssertTrue(actions.contains(name), "falta no menu: \(name)")

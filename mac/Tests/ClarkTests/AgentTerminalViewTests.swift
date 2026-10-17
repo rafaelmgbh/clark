@@ -266,4 +266,69 @@ final class AgentTerminalViewTests: XCTestCase {
         ProcessReaper.hangUp(1)
         ProcessReaper.hangUp(-1)
     }
+
+    // MARK: ⇧⌘C
+
+    private func key(_ code: UInt16, _ characters: String = "", modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
+        NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: 0,
+                         context: nil, characters: characters, charactersIgnoringModifiers: characters,
+                         isARepeat: false, keyCode: code)!
+    }
+
+    /// Terminal numa janela, com o texto já na tela e a cópia num pasteboard só do teste.
+    private func picking(_ text: String) -> (AgentTerminalView, NSWindow, NSPasteboard) {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 400), styleMask: [.titled],
+                              backing: .buffered, defer: true)
+        let view = makeView()
+        window.contentView = view
+        view.feed(text: text)
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("clark-linhas-\(UUID().uuidString)"))
+        view.lineNumbers.pasteboard = pasteboard
+        window.makeFirstResponder(view)
+        return (view, window, pasteboard)
+    }
+
+    func testCopyLinesNumbersTheScreenAndCopiesTheChosenOne() {
+        let (view, window, pasteboard) = picking("um\r\n\r\ndois\r\ntres")
+        XCTAssertTrue(view.beginLineSelection())
+        XCTAssertEqual(view.lineNumbers.picker?.lines.map(\.text), ["um", "dois", "tres"], "a linha em branco fica sem número")
+        XCTAssertTrue(window.firstResponder === view.lineNumbers, "o teclado é da escolha")
+        XCTAssertFalse(view.lineNumbers.isHidden)
+        view.lineNumbers.keyDown(with: key(18, "1"))
+        view.lineNumbers.keyDown(with: key(125, modifiers: .shift))
+        view.lineNumbers.keyDown(with: key(36))
+        XCTAssertEqual(pasteboard.string(forType: .string), "um\ndois")
+        XCTAssertTrue(window.firstResponder === view, "volta para a linha de digitação do agente")
+        XCTAssertTrue(view.lineNumbers.isHidden)
+    }
+
+    func testWrappedLineIsCopiedWhole() {
+        let long = String(repeating: "abcdefghij", count: 12)
+        let (view, _, pasteboard) = picking(long + "\r\nfim")
+        XCTAssertTrue(view.beginLineSelection())
+        view.lineNumbers.keyDown(with: key(126))
+        view.lineNumbers.copy(nil)
+        XCTAssertEqual(pasteboard.string(forType: .string), long, "o terminal quebrou por largura: é uma linha só")
+    }
+
+    func testEscapeAndClickLeaveWithoutCopying() {
+        let (view, window, pasteboard) = picking("um\r\ndois")
+        pasteboard.clearContents()
+        XCTAssertTrue(view.beginLineSelection())
+        view.lineNumbers.keyDown(with: key(53))
+        XCTAssertNil(pasteboard.string(forType: .string))
+        XCTAssertTrue(window.firstResponder === view)
+
+        XCTAssertTrue(view.beginLineSelection())
+        // O clique do mouse dá o teclado ao terminal.
+        window.makeFirstResponder(view)
+        XCTAssertFalse(view.lineNumbers.isPicking)
+        XCTAssertNil(pasteboard.string(forType: .string))
+    }
+
+    func testEmptyScreenHasNothingToPick() {
+        let (view, window, _) = picking("")
+        XCTAssertFalse(view.beginLineSelection())
+        XCTAssertTrue(window.firstResponder === view)
+    }
 }

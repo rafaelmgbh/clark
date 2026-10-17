@@ -25,6 +25,7 @@ enum MainMenu {
             item("Copiar", #selector(NSText.copy(_:)), "c"),
             item("Colar", #selector(NSText.paste(_:)), "v"),
             item("Selecionar tudo", #selector(NSText.selectAll(_:)), "a"),
+            item("Copiar linha…", #selector(MainWindowController.copyLines(_:)), "C"),
         ]))
         // O `=` invisível faz o ⌘+ funcionar sem o Shift nos teclados em que o + fica na tecla do =.
         let plainPlus = item("Aumentar a fonte", #selector(MainWindowController.increaseFont(_:)), "=")

@@ -895,6 +895,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         pixelMenu.show(menu, below: topBar.addButton, entering: menu.items.first { $0.hasSubmenu })
     }
 
+    /// ⇧⌘C: numera as linhas do terminal do agente atual para escolher e copiar pelo teclado.
+    @objc func copyLines(_ sender: Any?) {
+        if currentPane?.terminal.beginLineSelection() != true { NSSound.beep() }
+    }
+
     @objc func openProject(_ sender: NSMenuItem) {
         if let path = sender.representedObject as? String { openAgent(in: path) }
     }
@@ -971,6 +976,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         case #selector(chooseProject(_:)), #selector(openProject(_:)), #selector(chooseFolder(_:)),
              #selector(typeFolder(_:)):
             return launch != nil
+        case #selector(copyLines(_:)):
+            return currentPane != nil
         case #selector(closeAllAgents(_:)), #selector(toggleZoom(_:)), #selector(renameAgent(_:)),
              #selector(showDiff(_:)), #selector(refreshDiff(_:)):
             return !panes.isEmpty
